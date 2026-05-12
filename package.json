@@ -1,0 +1,267 @@
+{
+  "name": "code-align",
+  "displayName": "CodeAlign",
+  "description": "Universal text alignment for VS Code - align variables, operators, comments, tables and more across any language",
+  "version": "0.1.0",
+  "publisher": "r-seize",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/r-seize/CodeAlign"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Formatters",
+    "Other"
+  ],
+  "keywords": [
+    "align",
+    "format",
+    "columns",
+    "tables",
+    "operators",
+    "assignment",
+    "variables"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codealign.alignSmart",
+        "title": "Align Smart (Auto-detect)",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignByEquals",
+        "title": "Align by =",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignByColon",
+        "title": "Align by :",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignByPipe",
+        "title": "Align by |",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignByArrow",
+        "title": "Align by => or ->",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignComments",
+        "title": "Align Inline Comments",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignMultiColumn",
+        "title": "Align Multi-Column (separator + comments)",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignCustom",
+        "title": "Align by Custom Separator...",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.setAlignmentDistance",
+        "title": "Set Alignment Distance",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.toggleAutoAlign",
+        "title": "Toggle Auto-Align",
+        "category": "CodeAlign"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "codealign.alignSmart",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "codealign.alignComments",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "codealign.submenu",
+          "group": "1_modification@99",
+          "when": "editorHasSelection"
+        }
+      ],
+      "codealign.submenu": [
+        {
+          "command": "codealign.alignSmart",
+          "group": "1_main@1"
+        },
+        {
+          "command": "codealign.alignMultiColumn",
+          "group": "1_main@2"
+        },
+        {
+          "command": "codealign.alignComments",
+          "group": "1_main@3"
+        },
+        {
+          "command": "codealign.alignByEquals",
+          "group": "2_specific@1"
+        },
+        {
+          "command": "codealign.alignByColon",
+          "group": "2_specific@2"
+        },
+        {
+          "command": "codealign.alignByPipe",
+          "group": "2_specific@3"
+        },
+        {
+          "command": "codealign.alignByArrow",
+          "group": "2_specific@4"
+        },
+        {
+          "command": "codealign.alignCustom",
+          "group": "3_custom@1"
+        }
+      ]
+    },
+    "submenus": [
+      {
+        "id": "codealign.submenu",
+        "label": "CodeAlign"
+      }
+    ],
+    "configuration": {
+      "title": "CodeAlign",
+      "properties": {
+        "codealign.minimumSpacesBefore": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 10,
+          "markdownDescription": "Minimum spaces **before** the separator after trimming"
+        },
+        "codealign.minimumSpacesAfter": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "maximum": 10,
+          "markdownDescription": "Minimum spaces **after** the separator"
+        },
+        "codealign.commentSeparators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "//",
+            "#",
+            "--",
+            ";"
+          ],
+          "description": "Comment prefixes used for inline comment detection and alignment"
+        },
+        "codealign.smartSeparators": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [":=", "=>", "->", "<-", "!=", "==", "=", ":", "|", ","],
+            "enumDescriptions": [
+              "Walrus / Go short assignment  :=",
+              "Fat arrow  =>",
+              "Thin arrow  ->",
+              "Left arrow  <-",
+              "Not equal  !=",
+              "Equal comparison  ==",
+              "Assignment  =",
+              "Colon (YAML, JSON, dicts)  :",
+              "Pipe (tables)  |",
+              "Comma  ,"
+            ]
+          },
+          "default": ["="],
+          "description": "Separator candidates tried during smart auto-detection. Order matters - multi-char operators must come before single-char ones. By default only = is active; add others as needed."
+        },
+        "codealign.commentMinSpaces": {
+          "type": "number",
+          "default": 2,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Minimum spaces between code and inline comment when aligning comments"
+        },
+        "codealign.excludedLanguages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Language IDs where CodeAlign commands are disabled"
+        },
+        "codealign.smartDetectionThreshold": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0.1,
+          "maximum": 1,
+          "description": "Fraction of lines that must contain a separator for it to be chosen during smart detection"
+        },
+        "codealign.autoAlign.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically align code blocks without any manual action"
+        },
+        "codealign.autoAlign.trigger": {
+          "type": "string",
+          "enum": ["onSave", "onType"],
+          "enumDescriptions": [
+            "Align when the file is saved",
+            "Align while typing (debounced)"
+          ],
+          "default": "onSave",
+          "description": "When to trigger automatic alignment"
+        },
+        "codealign.autoAlign.debounceMs": {
+          "type": "number",
+          "default": 400,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "Delay in milliseconds after the last keystroke before auto-aligning (onType mode only)"
+        },
+        "codealign.autoAlign.separators": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["="],
+          "description": "Separators to use during auto-alignment (keep short to avoid unintended changes)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && mocha out/test/**/*.test.js",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "mocha": "^11.7.5",
+    "typescript": "^5.3.0"
+  }
+}
