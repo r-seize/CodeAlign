@@ -4,6 +4,8 @@ import {
   alignComments,
   alignMultiColumn,
   detectBestSeparator,
+  unalignBySeparator,
+  unalignComments,
   COMMENT_PREFIXES,
 } from './aligner/alignEngine';
 import {
@@ -20,6 +22,7 @@ interface CodeAlignConfig {
   commentMinSpaces: number;
   excludedLanguages: string[];
   smartDetectionThreshold: number;
+  tabSize: number;
 }
 
 interface AutoAlignConfig {
@@ -29,7 +32,7 @@ interface AutoAlignConfig {
   separators: string[];
 }
 
-function readConfig(): CodeAlignConfig {
+function readConfig(editor?: vscode.TextEditor): CodeAlignConfig {
   const cfg = vscode.workspace.getConfiguration('codealign');
   return {
     minSpacesBefore:         cfg.get<number>('minimumSpacesBefore', 1),
@@ -39,6 +42,7 @@ function readConfig(): CodeAlignConfig {
     commentMinSpaces:        cfg.get<number>('commentMinSpaces', 2),
     excludedLanguages:       cfg.get<string[]>('excludedLanguages', []),
     smartDetectionThreshold: cfg.get<number>('smartDetectionThreshold', 0.5),
+    tabSize:                 editor ? getTabSize(editor) : 4,
   };
 }
 
@@ -53,7 +57,7 @@ function readAutoConfig(): AutoAlignConfig {
 }
 
 async function autoAlignEditor(editor: vscode.TextEditor): Promise<void> {
-  const config     = readConfig();
+  const config     = readConfig(editor);
   const autoConfig = readAutoConfig();
 
   if (!autoConfig.enabled) return;
@@ -68,6 +72,7 @@ async function autoAlignEditor(editor: vscode.TextEditor): Promise<void> {
       minSpacesBefore: config.minSpacesBefore,
       minSpacesAfter:  config.minSpacesAfter,
       commentPrefixes: config.commentPrefixes,
+      tabSize:         config.tabSize,
     });
   }
 
@@ -83,6 +88,11 @@ async function autoAlignEditor(editor: vscode.TextEditor): Promise<void> {
 
 type AlignFn = (lines: string[], config: CodeAlignConfig) => string[] | null;
 
+function getTabSize(editor: vscode.TextEditor): number {
+  const t = editor.options.tabSize;
+  return typeof t === 'number' ? t : 4;
+}
+
 function registerAlignCommand(
   context: vscode.ExtensionContext,
   commandId: string,
@@ -92,7 +102,7 @@ function registerAlignCommand(
     const editor = vscode.window.activeTextEditor;
     if (!editor) return;
 
-    const config = readConfig();
+    const config = readConfig(editor);
     const sel    = getSelectedLines(editor, config.excludedLanguages);
     if (!sel) return;
 
@@ -125,6 +135,7 @@ export function activate(context: vscode.ExtensionContext): void {
       minSpacesBefore:  config.minSpacesBefore,
       minSpacesAfter:   config.minSpacesAfter,
       commentPrefixes:  config.commentPrefixes,
+      tabSize:          config.tabSize,
     });
   });
 
@@ -134,6 +145,7 @@ export function activate(context: vscode.ExtensionContext): void {
       minSpacesBefore:  config.minSpacesBefore,
       minSpacesAfter:   config.minSpacesAfter,
       commentPrefixes:  config.commentPrefixes,
+      tabSize:          config.tabSize,
     });
   });
 
@@ -143,6 +155,7 @@ export function activate(context: vscode.ExtensionContext): void {
       minSpacesBefore:  config.minSpacesBefore,
       minSpacesAfter:   config.minSpacesAfter,
       commentPrefixes:  config.commentPrefixes,
+      tabSize:          config.tabSize,
     });
   });
 
@@ -152,6 +165,7 @@ export function activate(context: vscode.ExtensionContext): void {
       minSpacesBefore:  config.minSpacesBefore,
       minSpacesAfter:   config.minSpacesAfter,
       commentPrefixes:  config.commentPrefixes,
+      tabSize:          config.tabSize,
     });
   });
 
@@ -164,12 +178,18 @@ export function activate(context: vscode.ExtensionContext): void {
       minSpacesBefore:  config.minSpacesBefore,
       minSpacesAfter:   config.minSpacesAfter,
       commentPrefixes:  config.commentPrefixes,
+      tabSize:          config.tabSize,
     });
   });
 
   registerAlignCommand(context, 'codealign.alignComments', (lines, config) => {
     showAlignStatus('comments');
-    const aligned = alignComments(lines, config.commentPrefixes, config.commentMinSpaces);
+    const aligned = alignComments(
+      lines,
+      config.commentPrefixes,
+      config.commentMinSpaces,
+      config.tabSize
+    );
     if (aligned.join('\n') === lines.join('\n')) {
       vscode.window.showInformationMessage(
         'CodeAlign: no inline comments found to align.'
@@ -201,6 +221,7 @@ export function activate(context: vscode.ExtensionContext): void {
         minSpacesBefore: config.minSpacesBefore,
         minSpacesAfter:  config.minSpacesAfter,
         commentPrefixes: config.commentPrefixes,
+        tabSize:         config.tabSize,
       },
       config.commentMinSpaces
     );
@@ -221,7 +242,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!input) return;
       const sep = input.trim();
 
-      const config = readConfig();
+      const config = readConfig(editor);
       const sel    = getSelectedLines(editor, config.excludedLanguages);
       if (!sel) return;
 
@@ -229,12 +250,40 @@ export function activate(context: vscode.ExtensionContext): void {
         minSpacesBefore:  config.minSpacesBefore,
         minSpacesAfter:   config.minSpacesAfter,
         commentPrefixes:  config.commentPrefixes,
+        tabSize:          config.tabSize,
       });
 
       await applyAlignedLines(editor, sel.range, aligned);
       showAlignStatus(sep);
     })
   );
+
+  registerAlignCommand(context, 'codealign.unalign', (lines, config) => {
+    const sep = detectBestSeparator(
+      lines,
+      config.smartSeparators,
+      config.smartDetectionThreshold
+    );
+
+    const opts = {
+      minSpacesBefore: config.minSpacesBefore,
+      minSpacesAfter:  config.minSpacesAfter,
+      commentPrefixes: config.commentPrefixes,
+      tabSize:         config.tabSize,
+    };
+
+    const afterSep = sep ? unalignBySeparator(lines, sep, opts) : lines;
+    const result   = unalignComments(afterSep, config.commentPrefixes, 1);
+
+    if (result.join('\n') === lines.join('\n')) {
+      vscode.window.showInformationMessage(
+        'CodeAlign: nothing to unalign in the selection.'
+      );
+    } else {
+      showAlignStatus(sep ? `unalign ${sep}` : 'unalign comments');
+    }
+    return result;
+  });
 
   context.subscriptions.push(
     vscode.commands.registerCommand('codealign.setAlignmentDistance', async () => {

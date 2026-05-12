@@ -2,7 +2,7 @@
   "name": "code-align",
   "displayName": "CodeAlign",
   "description": "Universal text alignment for VS Code - align variables, operators, comments, tables and more across any language",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "r-seize",
   "icon": "images/icon.png",
   "repository": {
@@ -70,6 +70,11 @@
         "category": "CodeAlign"
       },
       {
+        "command": "codealign.unalign",
+        "title": "Unalign (Collapse Spaces)",
+        "category": "CodeAlign"
+      },
+      {
         "command": "codealign.setAlignmentDistance",
         "title": "Set Alignment Distance",
         "category": "CodeAlign"
@@ -91,6 +96,12 @@
         "command": "codealign.alignComments",
         "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
+        "when": "editorTextFocus && editorHasSelection"
+      },
+      {
+        "command": "codealign.unalign",
+        "key": "ctrl+alt+u",
+        "mac": "cmd+alt+u",
         "when": "editorTextFocus && editorHasSelection"
       }
     ],
@@ -134,6 +145,10 @@
         {
           "command": "codealign.alignCustom",
           "group": "3_custom@1"
+        },
+        {
+          "command": "codealign.unalign",
+          "group": "4_unalign@1"
         }
       ]
     },

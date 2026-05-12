@@ -73,6 +73,7 @@ All commands are available in the Command Palette (`Ctrl+Shift+P`) under the `Co
 | Align Inline Comments | Aligns inline comment markers to the same column |
 | Align Multi-Column | Aligns separator then aligns inline comments |
 | Align by Custom Separator... | Prompts for any separator string |
+| Unalign (Collapse Spaces) | Reverses alignment: collapses padded spaces around the detected separator and inline comments back to a single space |
 | Set Alignment Distance | Sets the minimum spaces before the separator |
 | Toggle Auto-Align | Enables or disables automatic background alignment |
 
@@ -82,8 +83,9 @@ All commands are available in the Command Palette (`Ctrl+Shift+P`) under the `Co
 |---|---|---|
 | `Ctrl+Alt+A` | `Cmd+Alt+A` | Align Smart (Auto-detect) |
 | `Ctrl+Alt+C` | `Cmd+Alt+C` | Align Inline Comments |
+| `Ctrl+Alt+U` | `Cmd+Alt+U` | Unalign (Collapse Spaces) |
 
-Both shortcuts are only active when text is selected and the editor is focused.
+All shortcuts are only active when text is selected and the editor is focused.
 
 To rebind them to your own preference, open the Keyboard Shortcuts editor (`Ctrl+K Ctrl+S`), search for `CodeAlign` and assign any key combination you want.
 
@@ -193,9 +195,13 @@ CodeAlign distinguishes single-character operators from their multi-character co
 
 | Looking for | Ignores |
 |---|---|
-| `=` | `==`, `!=`, `<=`, `>=`, `:=`, `=>` |
+| `=` | `==`, `!=`, `<=`, `>=`, `:=`, `=>`, and compound assignments `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `\|=`, `^=`, `~=`, `??=` |
 | `:` | `::`, `:=` |
 | `\|` | `\|\|` |
+
+### Mixed indentation (tabs vs spaces)
+
+When grouping lines for alignment, CodeAlign normalises leading whitespace using the editor's current `tabSize`. A line indented with one tab and a line indented with the equivalent number of spaces are treated as the same indentation level and grouped together. The actual indentation characters are preserved - only the comparison is normalised.
 
 ## Examples
 
@@ -305,6 +311,28 @@ username : admin      # login
 password : secret123  # auth
 ```
 
+### Unalign (collapse)
+
+Reverses any previous alignment by collapsing the padded spaces around the detected separator and inline comments back to a single space. Useful before re-aligning with a different separator, or to produce a clean diff.
+
+Before:
+
+```javascript
+const name     = "John";       // user name
+const age      = 30;           // user age
+const city     = "New York";   // location
+```
+
+After **Unalign (Collapse Spaces)**:
+
+```javascript
+const name = "John"; // user name
+const age = 30; // user age
+const city = "New York"; // location
+```
+
+Compound operators are recognised and not modified - `total += 1` stays as `total += 1`.
+
 ### Group isolation
 
 CodeAlign does not align across blank lines or indentation changes:
@@ -350,6 +378,18 @@ CodeAlign works on any file VS Code can open as text. It has been tested with:
 Python, JavaScript, TypeScript, Rust, Go, C, C++, Java, Lua, PHP, Ruby, Swift, Kotlin, Bash, PowerShell, SQL, HTML, CSS, SCSS, JSON, YAML, TOML, XML, Markdown, Dockerfile, `.env` files, log files, and plain text.
 
 Because the engine operates on raw text with no language parser, it is compatible with any format that uses consistent separator characters.
+
+## Changelog
+
+### 0.1.1
+
+- **Fix**: compound assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `~=`, `??=`) are no longer mis-aligned by the `=` rule. A line like `page_num += 1` is now left untouched instead of becoming `page_num +     = 1`.
+- **Fix**: lines indented with tabs and lines indented with the equivalent number of spaces are now grouped together. The comparison normalises whitespace to visual columns based on the editor's `tabSize`; actual indentation characters are preserved.
+- **New command**: **Unalign (Collapse Spaces)** (`Ctrl+Alt+U` / `Cmd+Alt+U`) reverses alignment by collapsing padded gaps around the detected separator and inline comments to a single space.
+
+### 0.1.0
+
+- Initial release.
 
 ## Contributing
 

@@ -5,6 +5,8 @@ import {
     alignComments,
     detectBestSeparator,
     alignMultiColumn,
+    unalignBySeparator,
+    unalignComments,
 } from '../aligner/alignEngine';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,53 @@ describe('findSeparatorIndex', () => {
 
     it('finds -> correctly', () => {
         assert.strictEqual(findSeparatorIndex('key -> value', '->'), 4);
+    });
+
+    it('skips += when looking for =', () => {
+        assert.strictEqual(findSeparatorIndex('page_num += 1', '='), -1);
+    });
+
+    it('skips -= when looking for =', () => {
+        assert.strictEqual(findSeparatorIndex('count -= 1', '='), -1);
+    });
+
+    it('skips *= /= %= when looking for =', () => {
+        assert.strictEqual(findSeparatorIndex('x *= 2', '='), -1);
+        assert.strictEqual(findSeparatorIndex('x /= 2', '='), -1);
+        assert.strictEqual(findSeparatorIndex('x %= 2', '='), -1);
+    });
+
+    it('skips bitwise compound assignments when looking for =', () => {
+        assert.strictEqual(findSeparatorIndex('flags &= mask', '='), -1);
+        assert.strictEqual(findSeparatorIndex('flags |= mask', '='), -1);
+        assert.strictEqual(findSeparatorIndex('flags ^= mask', '='), -1);
+    });
+
+    it('skips ??= when looking for =', () => {
+        assert.strictEqual(findSeparatorIndex('value ??= fallback', '='), -1);
+    });
+});
+
+describe('alignBySeparator - compound operators', () => {
+    it('does not break += lines by aligning their =', () => {
+        const input = [
+            'page_num += 1',
+            'counter  += 1',
+            'total    += value',
+        ];
+        const result = alignBySeparator(input, '=');
+        // No line should have a stray space inserted before the '=' of '+='
+        assert.deepStrictEqual(result, input);
+    });
+
+    it('does not realign a mixed group of = and +=', () => {
+        const input = [
+            'x = 1',
+            'y += 2',
+        ];
+        const result = alignBySeparator(input, '=');
+        // Only line 0 has a valid '=', group of 1 → unchanged
+        assert.deepStrictEqual(result, input);
     });
 });
 
@@ -304,6 +353,92 @@ describe('detectBestSeparator', () => {
 // ---------------------------------------------------------------------------
 // alignMultiColumn
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// mixed indentation (tabs vs spaces)
+// ---------------------------------------------------------------------------
+
+describe('alignBySeparator - mixed indentation', () => {
+    it('groups a tab-indented line with a 4-space-indented line when tabSize=4', () => {
+        const input = [
+            '\tname = "Alice"',
+            '    age  = 30',
+        ];
+        const result = alignBySeparator(input, '=', { tabSize: 4 });
+        // Both visually share the same indent (1 tab vs 4 spaces, tabSize=4)
+        // so they should land in the same alignment group. Within a group, the
+        // engine aligns by character count, so the '=' character indices match.
+        assert.strictEqual(result[0].indexOf('='), result[1].indexOf('='));
+        // And the alignment should differ from the input on at least one line
+        // (proving the group was actually formed and aligned).
+        assert.notDeepStrictEqual(result, input);
+    });
+
+    it('keeps lines apart when tab visual width does not match space indent', () => {
+        const input = [
+            '\tname = "Alice"',   // tabSize=2 → 2 cols
+            '    age  = 30',      // 4 spaces  → 4 cols
+        ];
+        const result = alignBySeparator(input, '=', { tabSize: 2 });
+        // Different normalized indent → no group → unchanged
+        assert.deepStrictEqual(result, input);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// unalignBySeparator
+// ---------------------------------------------------------------------------
+
+describe('unalignBySeparator', () => {
+    it('collapses padded = back to a single space gap', () => {
+        const input  = ['name     = "Alice"', 'age      = 30', 'city     = "NYC"'];
+        const result = unalignBySeparator(input, '=');
+        assert.deepStrictEqual(result, ['name = "Alice"', 'age = 30', 'city = "NYC"']);
+    });
+
+    it('preserves leading indent', () => {
+        const input  = ['    foo    = 1', '    bar    = 2'];
+        const result = unalignBySeparator(input, '=');
+        assert.deepStrictEqual(result, ['    foo = 1', '    bar = 2']);
+    });
+
+    it('leaves lines without the separator untouched', () => {
+        const input  = ['plain text', 'x     = 1'];
+        const result = unalignBySeparator(input, '=');
+        assert.strictEqual(result[0], 'plain text');
+        assert.strictEqual(result[1], 'x = 1');
+    });
+
+    it('does not touch += (treats it as a compound operator)', () => {
+        const input  = ['page_num   += 1'];
+        const result = unalignBySeparator(input, '=');
+        assert.deepStrictEqual(result, input);
+    });
+
+    it('respects minSpacesBefore / minSpacesAfter options', () => {
+        const input  = ['name     =     "Alice"'];
+        const result = unalignBySeparator(input, '=', { minSpacesBefore: 2, minSpacesAfter: 2 });
+        assert.strictEqual(result[0], 'name  =  "Alice"');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// unalignComments
+// ---------------------------------------------------------------------------
+
+describe('unalignComments', () => {
+    it('collapses padded inline comments to a single space gap', () => {
+        const input  = ['x = 1       // first', 'longName = 2   // second'];
+        const result = unalignComments(input, ['//']);
+        assert.deepStrictEqual(result, ['x = 1 // first', 'longName = 2 // second']);
+    });
+
+    it('leaves full-line comments untouched', () => {
+        const input  = ['// just a comment', 'x = 1   // inline'];
+        const result = unalignComments(input, ['//']);
+        assert.strictEqual(result[0], '// just a comment');
+    });
+});
 
 describe('alignMultiColumn', () => {
     it('aligns separator then comments', () => {

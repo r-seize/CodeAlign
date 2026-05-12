@@ -2,12 +2,14 @@ export interface AlignOptions {
     minSpacesBefore: number;
     minSpacesAfter: number;
     commentPrefixes: string[];
+    tabSize: number;
 }
 
 const DEFAULT_OPTIONS: AlignOptions = {
     minSpacesBefore: 1,
     minSpacesAfter: 1,
     commentPrefixes: [],
+    tabSize:         4,
 };
 
 export const KNOWN_SEPARATORS = [
@@ -37,8 +39,9 @@ export function findSeparatorIndex(line: string, separator: string): number {
         if (separator === '=') {
             const prev = idx > 0 ? line[idx - 1] : '';
             const next = idx < line.length - 1 ? line[idx + 1] : '';
-            // Skip !=, <=, >=, :=, ==, => and also the second = in ==
-            if ('!<>:='.includes(prev) || '=>'.includes(next)) {
+            // Skip !=, <=, >=, :=, ==, => and the second = in ==.
+            // Also skip compound assignments: +=, -=, *=, /=, %=, &=, |=, ^=, ~=, ?= (??=)
+            if ('!<>:=+-*/%&|^~?'.includes(prev) || '=>'.includes(next)) {
                 pos = idx + 1;
                 continue;
             }
@@ -111,6 +114,19 @@ function getIndent(line: string): string {
 }
 
 /**
+ * Expand tabs to spaces using the given tab size so that visually-equivalent
+ * indentations compare equal across mixed tab/space files.
+ */
+function normalizeIndent(indent: string, tabSize: number): string {
+    let col = 0;
+    for (const ch of indent) {
+        if (ch === '\t') col += tabSize - (col % tabSize);
+        else col += 1;
+    }
+    return ' '.repeat(col);
+}
+
+/**
  * Returns true if the line opens a multi-line block after the separator.
  * e.g.  "const x = {"  or  "const arr = ["  - these should not join an alignment group.
  * A single-line assignment like "const obj = { a: 1 };" is fine (last char is ";").
@@ -146,7 +162,8 @@ function getCodePart(line: string, commentPrefixes: string[]): string {
 function findConsecutiveGroups(
     lines: string[],
     separator: string,
-    commentPrefixes: string[] = []
+    commentPrefixes: string[] = [],
+    tabSize                  = 4
 ): Array<{ start: number; end: number }> {
     const groups: Array<{ start: number; end: number }> = [];
     let groupStart  = -1;
@@ -171,7 +188,7 @@ function findConsecutiveGroups(
         const hasSep   = codePart.length > 0
             && findSeparatorIndex(codePart, separator) >= 0
             && !opensBlock(line, commentPrefixes);
-        const indent = getIndent(line);
+        const indent = normalizeIndent(getIndent(line), tabSize);
 
         if (!hasSep) {
             closeGroup(i);
@@ -241,7 +258,7 @@ export function alignBySeparator(
     options: Partial<AlignOptions> = {}
 ): string[] {
     const opts   = { ...DEFAULT_OPTIONS, ...options };
-    const groups = findConsecutiveGroups(lines, separator, opts.commentPrefixes);
+    const groups = findConsecutiveGroups(lines, separator, opts.commentPrefixes, opts.tabSize);
 
     if (groups.length === 0) return lines;
 
@@ -318,7 +335,8 @@ function parseInlineComment(
 export function alignComments(
     lines: string[],
     commentPrefixes: string[],
-    minSpacesBefore = 2
+    minSpacesBefore = 2,
+    tabSize         = 4
 ): string[] {
     const parsed = lines.map(line => parseInlineComment(line, commentPrefixes));
 
@@ -340,7 +358,7 @@ export function alignComments(
         if (i === lines.length) { closeCommentGroup(i); break; }
 
         const hasComment = parsed[i] !== null;
-        const indent     = getIndent(lines[i]);
+        const indent     = normalizeIndent(getIndent(lines[i]), tabSize);
 
         if (!hasComment) {
             closeCommentGroup(i);
@@ -385,8 +403,72 @@ export function alignMultiColumn(
     options: Partial<AlignOptions> = {},
     commentMinSpaces               = 2
 ): string[] {
-    const afterSep = alignBySeparator(lines, separator, options);
-    return alignComments(afterSep, commentPrefixes, commentMinSpaces);
+    const opts     = { ...DEFAULT_OPTIONS, ...options };
+    const afterSep = alignBySeparator(lines, separator, opts);
+    return alignComments(afterSep, commentPrefixes, commentMinSpaces, opts.tabSize);
+}
+
+/**
+ * Collapse the run of spaces immediately around the separator on a single line
+ * down to opts.minSpacesBefore / opts.minSpacesAfter. Leading indent is preserved.
+ * Returns the line untouched if it has no top-level separator.
+ */
+function unalignLine(
+    line: string,
+    separator: string,
+    opts: AlignOptions
+): string {
+    const indent  = line.match(/^(\s*)/)?.[1] ?? '';
+    const body    = line.substring(indent.length);
+
+    const commentInfo = parseInlineComment(body, opts.commentPrefixes);
+    const codePart    = commentInfo ? commentInfo.code : body;
+    const commentTail = commentInfo ? commentInfo.comment : '';
+
+    const sepIdx = findSeparatorIndex(codePart, separator);
+    if (sepIdx < 0) return line;
+
+    const before = codePart.substring(0, sepIdx).trimEnd();
+    const after  = codePart.substring(sepIdx + separator.length).trimStart();
+
+    const beforeSpace = ' '.repeat(opts.minSpacesBefore);
+    const afterSpace  = after.length > 0 ? ' '.repeat(opts.minSpacesAfter) : '';
+
+    let collapsed = indent + before + beforeSpace + separator + afterSpace + after;
+    if (commentTail) collapsed += ' ' + commentTail;
+    return collapsed;
+}
+
+/**
+ * Reverse of alignBySeparator: collapse runs of spaces around the separator on
+ * every line that has it at top level, back to the configured minimum gap.
+ * Lines without the separator are returned untouched.
+ */
+export function unalignBySeparator(
+    lines: string[],
+    separator: string,
+    options: Partial<AlignOptions> = {}
+): string[] {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+    return lines.map(line => unalignLine(line, separator, opts));
+}
+
+/**
+ * Reverse of alignComments: collapse the gap between code and inline comment
+ * to minSpacesBefore (default 1). Full-line comments are left untouched.
+ */
+export function unalignComments(
+    lines: string[],
+    commentPrefixes: string[],
+    minSpacesBefore = 1
+): string[] {
+    return lines.map(line => {
+        const indent = line.match(/^(\s*)/)?.[1] ?? '';
+        const body   = line.substring(indent.length);
+        const info   = parseInlineComment(body, commentPrefixes);
+        if (!info) return line;
+        return indent + info.code + ' '.repeat(minSpacesBefore) + info.comment;
+    });
 }
 
 /**
