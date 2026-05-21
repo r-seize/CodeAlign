@@ -2,7 +2,7 @@
   "name": "code-align",
   "displayName": "CodeAlign",
   "description": "Universal text alignment for VS Code - align variables, operators, comments, tables and more across any language",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "r-seize",
   "icon": "images/icon.png",
   "repository": {
@@ -35,33 +35,8 @@
         "category": "CodeAlign"
       },
       {
-        "command": "codealign.alignByEquals",
-        "title": "Align by =",
-        "category": "CodeAlign"
-      },
-      {
-        "command": "codealign.alignByColon",
-        "title": "Align by :",
-        "category": "CodeAlign"
-      },
-      {
-        "command": "codealign.alignByPipe",
-        "title": "Align by |",
-        "category": "CodeAlign"
-      },
-      {
-        "command": "codealign.alignByArrow",
-        "title": "Align by => or ->",
-        "category": "CodeAlign"
-      },
-      {
-        "command": "codealign.alignComments",
-        "title": "Align Inline Comments",
-        "category": "CodeAlign"
-      },
-      {
-        "command": "codealign.alignMultiColumn",
-        "title": "Align Multi-Column (separator + comments)",
+        "command": "codealign.alignBy",
+        "title": "Align by...",
         "category": "CodeAlign"
       },
       {
@@ -70,13 +45,23 @@
         "category": "CodeAlign"
       },
       {
+        "command": "codealign.alignComments",
+        "title": "Align Inline Comments",
+        "category": "CodeAlign"
+      },
+      {
         "command": "codealign.unalign",
         "title": "Unalign (Collapse Spaces)",
         "category": "CodeAlign"
       },
       {
-        "command": "codealign.setAlignmentDistance",
-        "title": "Set Alignment Distance",
+        "command": "codealign.preview",
+        "title": "Preview Alignment",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.switchProfile",
+        "title": "Switch Profile",
         "category": "CodeAlign"
       },
       {
@@ -119,7 +104,7 @@
           "group": "1_main@1"
         },
         {
-          "command": "codealign.alignMultiColumn",
+          "command": "codealign.alignBy",
           "group": "1_main@2"
         },
         {
@@ -127,28 +112,20 @@
           "group": "1_main@3"
         },
         {
-          "command": "codealign.alignByEquals",
-          "group": "2_specific@1"
-        },
-        {
-          "command": "codealign.alignByColon",
-          "group": "2_specific@2"
-        },
-        {
-          "command": "codealign.alignByPipe",
-          "group": "2_specific@3"
-        },
-        {
-          "command": "codealign.alignByArrow",
-          "group": "2_specific@4"
+          "command": "codealign.preview",
+          "group": "1_main@4"
         },
         {
           "command": "codealign.alignCustom",
-          "group": "3_custom@1"
+          "group": "2_custom@1"
         },
         {
           "command": "codealign.unalign",
-          "group": "4_unalign@1"
+          "group": "3_unalign@1"
+        },
+        {
+          "command": "codealign.switchProfile",
+          "group": "4_profile@1"
         }
       ]
     },
@@ -258,6 +235,36 @@
           "items": { "type": "string" },
           "default": ["="],
           "description": "Separators to use during auto-alignment (keep short to avoid unintended changes)"
+        },
+        "codealign.separatorOccurrence": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Which occurrence of the separator to align on. 1 = first (default), 2 = second, etc. Useful for aligning the second = in lines like: key = val = default."
+        },
+        "codealign.pasteAlign.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically align code when pasting multi-line blocks. Uses the separators configured in codealign.smartSeparators."
+        },
+        "codealign.activeProfile": {
+          "type": "string",
+          "default": "",
+          "description": "Name of the active configuration profile. Leave empty to use base settings. Set via the Switch Profile command or directly in settings."
+        },
+        "codealign.profiles": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Named alignment profiles. Each profile can override `separators`, `minimumSpacesBefore`, and `minimumSpacesAfter`. Switch between profiles with the **Switch Profile** command.\n\nExample:\n```json\n\"codealign.profiles\": {\n  \"Python\": { \"separators\": [\"=\", \":\"], \"minimumSpacesBefore\": 1 },\n  \"YAML\":   { \"separators\": [\":\"], \"minimumSpacesBefore\": 0 },\n  \"Tables\": { \"separators\": [\"|\", \",\"] }\n}\n```",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "separators":          { "type": "array", "items": { "type": "string" }, "description": "Separator candidates for smart detection in this profile" },
+              "minimumSpacesBefore": { "type": "number", "minimum": 0, "maximum": 10, "description": "Minimum spaces before the separator" },
+              "minimumSpacesAfter":  { "type": "number", "minimum": 0, "maximum": 10, "description": "Minimum spaces after the separator" }
+            }
+          }
         }
       }
     }

@@ -1,15 +1,17 @@
 export interface AlignOptions {
-    minSpacesBefore: number;
-    minSpacesAfter: number;
-    commentPrefixes: string[];
-    tabSize: number;
+    minSpacesBefore:     number;
+    minSpacesAfter:      number;
+    commentPrefixes:     string[];
+    tabSize:             number;
+    separatorOccurrence: number;
 }
 
 const DEFAULT_OPTIONS: AlignOptions = {
-    minSpacesBefore: 1,
-    minSpacesAfter: 1,
-    commentPrefixes: [],
-    tabSize:         4,
+    minSpacesBefore:     1,
+    minSpacesAfter:      1,
+    commentPrefixes:     [],
+    tabSize:             4,
+    separatorOccurrence: 1,
 };
 
 export const KNOWN_SEPARATORS = [
@@ -23,8 +25,9 @@ export const COMMENT_PREFIXES = ['//', '#', '--', ';'];
  * Find the first valid occurrence of a separator in a line.
  * Skips occurrences that are part of a longer operator.
  */
-export function findSeparatorIndex(line: string, separator: string): number {
-    let pos = 0;
+export function findSeparatorIndex(line: string, separator: string, occurrence = 1): number {
+    let pos   = 0;
+    let found = 0;
 
     while (pos < line.length) {
         const idx = line.indexOf(separator, pos);
@@ -103,7 +106,10 @@ export function findSeparatorIndex(line: string, separator: string): number {
             }
         }
 
-        return idx;
+        // Valid occurrence - return if this is the one we want, otherwise keep looking
+        found++;
+        if (found === occurrence) return idx;
+        pos = idx + separator.length;
     }
 
     return -1;
@@ -162,8 +168,9 @@ function getCodePart(line: string, commentPrefixes: string[]): string {
 function findConsecutiveGroups(
     lines: string[],
     separator: string,
-    commentPrefixes: string[] = [],
-    tabSize                  = 4
+    commentPrefixes:     string[] = [],
+    tabSize                       = 4,
+    separatorOccurrence           = 1
 ): Array<{ start: number; end: number }> {
     const groups: Array<{ start: number; end: number }> = [];
     let groupStart  = -1;
@@ -186,7 +193,7 @@ function findConsecutiveGroups(
         const line     = lines[i];
         const codePart = getCodePart(line, commentPrefixes);
         const hasSep   = codePart.length > 0
-            && findSeparatorIndex(codePart, separator) >= 0
+            && findSeparatorIndex(codePart, separator, separatorOccurrence) >= 0
             && !opensBlock(line, commentPrefixes);
         const indent = normalizeIndent(getIndent(line), tabSize);
 
@@ -222,7 +229,7 @@ function alignGroup(
 ): string[] {
     const sepIndices = lines.map(line => {
         const codePart = getCodePart(line, opts.commentPrefixes);
-        return codePart.length > 0 ? findSeparatorIndex(codePart, separator) : -1;
+        return codePart.length > 0 ? findSeparatorIndex(codePart, separator, opts.separatorOccurrence) : -1;
     });
 
     const beforeTexts = lines.map((line, i) =>
@@ -258,7 +265,7 @@ export function alignBySeparator(
     options: Partial<AlignOptions> = {}
 ): string[] {
     const opts   = { ...DEFAULT_OPTIONS, ...options };
-    const groups = findConsecutiveGroups(lines, separator, opts.commentPrefixes, opts.tabSize);
+    const groups = findConsecutiveGroups(lines, separator, opts.commentPrefixes, opts.tabSize, opts.separatorOccurrence);
 
     if (groups.length === 0) return lines;
 
@@ -425,7 +432,7 @@ function unalignLine(
     const codePart    = commentInfo ? commentInfo.code : body;
     const commentTail = commentInfo ? commentInfo.comment : '';
 
-    const sepIdx = findSeparatorIndex(codePart, separator);
+    const sepIdx = findSeparatorIndex(codePart, separator, opts.separatorOccurrence);
     if (sepIdx < 0) return line;
 
     const before = codePart.substring(0, sepIdx).trimEnd();

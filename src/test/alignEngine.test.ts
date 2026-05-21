@@ -355,6 +355,46 @@ describe('detectBestSeparator', () => {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// findSeparatorIndex - occurrence
+// ---------------------------------------------------------------------------
+
+describe('findSeparatorIndex - occurrence', () => {
+    it('occurrence=1 returns the first valid =', () => {
+        assert.strictEqual(findSeparatorIndex('a = 1; b = 2', '=', 1), 2);
+    });
+
+    it('occurrence=2 returns the second valid =', () => {
+        assert.strictEqual(findSeparatorIndex('a = 1; b = 2', '=', 2), 9);
+    });
+
+    it('occurrence=3 returns -1 when only 2 occurrences exist', () => {
+        assert.strictEqual(findSeparatorIndex('a = 1; b = 2', '=', 3), -1);
+    });
+
+    it('compound guards do not count as valid occurrences', () => {
+        // += is skipped by the compound-op guard, first valid = is the one in 'y = 2'
+        // 'x += 1; y = 2' → = at index 3 skipped (prev '+'), = at index 10 is valid
+        assert.strictEqual(findSeparatorIndex('x += 1; y = 2', '=', 1), 10);
+        // occurrence=2 has no second valid = after y
+        assert.strictEqual(findSeparatorIndex('x += 1; y = 2', '=', 2), -1);
+    });
+
+    it('alignBySeparator aligns on the 2nd occurrence', () => {
+        const input = [
+            'a = val = x',
+            'bb = val = yy',
+        ];
+        const result = alignBySeparator(input, '=', { separatorOccurrence: 2 });
+        // The SECOND '=' on each line must be at the same char column
+        const col0 = result[0].lastIndexOf('=');
+        const col1 = result[1].lastIndexOf('=');
+        assert.strictEqual(col0, col1);
+        // The first '=' is untouched (not the alignment target)
+        assert.ok(result[0].startsWith('a = val'), `got: ${result[0]}`);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // mixed indentation (tabs vs spaces)
 // ---------------------------------------------------------------------------
 
