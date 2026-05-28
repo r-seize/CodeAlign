@@ -4,8 +4,6 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 
 ![CodeAlign demo](https://raw.githubusercontent.com/r-seize/CodeAlign/main/images/demo.gif)
 
----
-
 ## Features
 
 | | |
@@ -29,13 +27,9 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 | **Group isolation** | Only consecutive lines at the same indent level are aligned together. Blank lines and indent changes create boundaries. |
 | **Context-aware** | Separators inside strings, comments, and parentheses are ignored. Compound operators (`+=`, `-=`…) are never broken. |
 
----
-
 ## Installation
 
 `Ctrl+Shift+X` → search **CodeAlign** → Install.
-
----
 
 ## Usage
 
@@ -43,8 +37,6 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 - **Without selection:** `Ctrl+Alt+A` aligns the entire file.
 - **Folder:** right-click a folder in the Explorer → **Align All Files in Folder**.
 - **Command Palette:** `Ctrl+Shift+P` → type `CodeAlign` to see all commands.
-
----
 
 ## Commands
 
@@ -65,8 +57,6 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 | **Toggle Auto-Align** | Enable / disable background alignment |
 | **Align All Files in Folder** | Align all files in a folder recursively |
 
----
-
 ## Keyboard Shortcuts
 
 | Windows / Linux | macOS | Command |
@@ -77,8 +67,6 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 | `Ctrl+Alt+S` | `Cmd+Alt+S` | Sort & Align |
 
 Rebind anything via `Ctrl+K Ctrl+S` → search `CodeAlign`.
-
----
 
 ## Configuration
 
@@ -180,8 +168,6 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
 }
 ```
 
----
-
 ## Examples
 
 ### Variable assignments
@@ -277,8 +263,6 @@ city = "NYC"   # location
 ### Unalign
 Collapses aligned spaces back to the configured minimum - useful before re-aligning with a different separator or to keep diffs clean.
 
----
-
 ## Alignment rules
 
 - **Groups:** consecutive lines, same indentation, same separator. Blank lines and indent changes are boundaries. Minimum 2 lines to align.
@@ -288,13 +272,9 @@ Collapses aligned spaces back to the configured minimum - useful before re-align
 - **Compound operators:** `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `~=`, `??=` are never broken.
 - **Mixed indent:** tabs and spaces are normalised using the editor's `tabSize` for grouping; actual characters are preserved.
 
----
-
 ## Supported languages
 
 Works on any file VS Code can open as text. Tested with Python, JavaScript, TypeScript, Rust, Go, C, C++, Java, Lua, PHP, Ruby, Swift, Kotlin, Bash, PowerShell, SQL, HTML, CSS, SCSS, JSON, YAML, TOML, XML, Markdown, Dockerfile, `.env`, and plain text.
-
----
 
 ## Contributing
 
