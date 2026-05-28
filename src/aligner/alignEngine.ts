@@ -478,6 +478,161 @@ export function unalignComments(
     });
 }
 
+// -- Feature extensions ----------------------------------------------------
+
+/**
+ * Align lines by a regular expression pattern.
+ * Lines matching the pattern are grouped and padded so the match starts at the
+ * same column. Returns null if the pattern is invalid.
+ */
+export function alignByRegex(
+    lines:   string[],
+    pattern: string,
+    opts:    Partial<AlignOptions> = {}
+): string[] | null {
+    const options = { ...DEFAULT_OPTIONS, ...opts };
+    let regex: RegExp;
+    try { regex = new RegExp(pattern); } catch { return null; }
+
+    const groups: Array<{ start: number; end: number }> = [];
+    let groupStart  = -1;
+    let groupIndent = '';
+
+    const close = (i: number) => {
+        if (groupStart !== -1 && i - groupStart >= 2) groups.push({ start: groupStart, end: i - 1 });
+        groupStart = -1; groupIndent = '';
+    };
+
+    for (let i = 0; i <= lines.length; i++) {
+        if (i === lines.length) { close(i); break; }
+        const m      = regex.exec(lines[i]);
+        const indent = normalizeIndent(getIndent(lines[i]), options.tabSize);
+        if (!m) { close(i); continue; }
+        if (groupStart === -1) { groupStart = i; groupIndent = indent; }
+        else if (indent !== groupIndent) { close(i); groupStart = i; groupIndent = indent; }
+    }
+
+    if (groups.length === 0) return lines;
+    const result = [...lines];
+
+    for (const { start, end } of groups) {
+        const grpLines = lines.slice(start, end + 1);
+        const matches  = grpLines.map(l => regex.exec(l));
+        const maxBefore = Math.max(...matches.map((m, i) =>
+            m ? grpLines[i].substring(0, m.index).trimEnd().length : 0
+        ));
+        for (let i = 0; i < grpLines.length; i++) {
+            const m = matches[i];
+            if (!m) continue;
+            const before = grpLines[i].substring(0, m.index).trimEnd();
+            const after  = grpLines[i].substring(m.index + m[0].length).trimStart();
+            const pad    = ' '.repeat(maxBefore - before.length + options.minSpacesBefore);
+            const aPad   = after.length > 0 ? ' '.repeat(options.minSpacesAfter) : '';
+            result[start + i] = before + pad + m[0] + aPad + after;
+        }
+    }
+    return result;
+}
+
+/**
+ * Format selected lines as a Markdown table.
+ * Auto-detects delimiter (|, comma, tab). Recalculates column widths and
+ * inserts/replaces the header separator row.
+ */
+export function formatAsTable(lines: string[]): string[] {
+    if (lines.length < 2) return lines;
+
+    const score = (d: string) => lines.filter(l => l.includes(d)).length;
+    const delimiter = score('|') >= score(',') && score('|') >= score('\t') ? '|'
+                    : score(',') >= score('\t') ? ','
+                    : '\t';
+
+    const parse = (l: string) => l.split(delimiter)
+        .map(c => c.trim())
+        .filter((c, i, arr) => !(i === 0 && c === '') && !(i === arr.length - 1 && c === ''));
+
+    const rows     = lines.map(parse);
+    const dataRows = rows.filter(r => !r.every(c => /^[-: ]+$/.test(c)));
+    if (dataRows.length === 0) return lines;
+
+    const colCount  = Math.max(...dataRows.map(r => r.length));
+    const colWidths = Array(colCount).fill(3);
+    for (const row of dataRows) {
+        for (let c = 0; c < row.length; c++) {
+            colWidths[c] = Math.max(colWidths[c], (row[c] ?? '').length);
+        }
+    }
+
+    const fmtRow = (cells: string[]) =>
+        '| ' + Array.from({ length: colCount }, (_, c) =>
+            (cells[c] ?? '').padEnd(colWidths[c])
+        ).join(' | ') + ' |';
+
+    const sepRow = '| ' + colWidths.map(w => '-'.repeat(w)).join(' | ') + ' |';
+
+    const result = [fmtRow(dataRows[0]), sepRow];
+    for (let i = 1; i < dataRows.length; i++) result.push(fmtRow(dataRows[i]));
+    return result;
+}
+
+/**
+ * Pad lines so the separator (or end of content) reaches the target column.
+ * Lines where the content already exceeds the column are left untouched.
+ */
+export function alignToColumn(
+    lines:     string[],
+    column:    number,
+    separator?: string,
+    opts:      Partial<AlignOptions> = {}
+): string[] {
+    const options = { ...DEFAULT_OPTIONS, ...opts };
+    return lines.map(line => {
+        if (!separator) {
+            const trimmed = line.trimEnd();
+            return trimmed.length >= column ? line : trimmed + ' '.repeat(column - trimmed.length);
+        }
+        const idx = findSeparatorIndex(line, separator, options.separatorOccurrence);
+        if (idx < 0) return line;
+        const before = line.substring(0, idx).trimEnd();
+        const rest   = line.substring(idx);
+        const needed = column - before.length;
+        if (needed <= options.minSpacesBefore) return line;
+        return before + ' '.repeat(needed) + rest;
+    });
+}
+
+/**
+ * Align only the groups that contain at least one of the provided changed line
+ * indices. Groups without any changed line are left untouched.
+ */
+export function alignWithChangedLines(
+    lines:          string[],
+    separator:      string,
+    changedIndices: Set<number>,
+    options:        Partial<AlignOptions> = {}
+): string[] {
+    const opts   = { ...DEFAULT_OPTIONS, ...options };
+    const groups = findConsecutiveGroups(
+        lines, separator, opts.commentPrefixes, opts.tabSize, opts.separatorOccurrence
+    );
+
+    const active = groups.filter(({ start, end }) => {
+        for (let i = start; i <= end; i++) {
+            if (changedIndices.has(i)) return true;
+        }
+        return false;
+    });
+
+    if (active.length === 0) return lines;
+
+    const result = [...lines];
+    for (const { start, end } of active) {
+        const aligned = alignGroup(lines.slice(start, end + 1), separator, opts);
+        for (let i = 0; i < aligned.length; i++) result[start + i] = aligned[i];
+    }
+    return result;
+}
+
 /**
  * Return the depth of unmatched '(' at the given position in a line.
  * Used to skip = signs that appear inside for-loop headers or function parameters.

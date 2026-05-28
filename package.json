@@ -2,7 +2,7 @@
   "name": "code-align",
   "displayName": "CodeAlign",
   "description": "Universal text alignment for VS Code - align variables, operators, comments, tables and more across any language",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "r-seize",
   "icon": "images/icon.png",
   "repository": {
@@ -68,6 +68,36 @@
         "command": "codealign.toggleAutoAlign",
         "title": "Toggle Auto-Align",
         "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignFolder",
+        "title": "Align All Files in Folder...",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignDiff",
+        "title": "Align Changed Lines (Git Diff)",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignRegex",
+        "title": "Align by Regex...",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.sortAndAlign",
+        "title": "Sort & Align",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.formatTable",
+        "title": "Format as Table",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignToColumn",
+        "title": "Align to Column...",
+        "category": "CodeAlign"
       }
     ],
     "keybindings": [
@@ -75,22 +105,43 @@
         "command": "codealign.alignSmart",
         "key": "ctrl+alt+a",
         "mac": "cmd+alt+a",
-        "when": "editorTextFocus && editorHasSelection"
+        "when": "editorTextFocus"
       },
       {
         "command": "codealign.alignComments",
         "key": "ctrl+alt+c",
         "mac": "cmd+alt+c",
-        "when": "editorTextFocus && editorHasSelection"
+        "when": "editorTextFocus"
       },
       {
         "command": "codealign.unalign",
         "key": "ctrl+alt+u",
         "mac": "cmd+alt+u",
-        "when": "editorTextFocus && editorHasSelection"
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "codealign.sortAndAlign",
+        "key": "ctrl+alt+s",
+        "mac": "cmd+alt+s",
+        "when": "editorTextFocus"
       }
     ],
     "menus": {
+      "commandPalette": [
+        { "command": "codealign.alignFolder",   "when": "false" },
+        { "command": "codealign.preview",        "when": "false" },
+        { "command": "codealign.alignCustom",    "when": "false" },
+        { "command": "codealign.alignRegex",     "when": "false" },
+        { "command": "codealign.alignToColumn",  "when": "false" },
+        { "command": "codealign.formatTable",    "when": "false" }
+      ],
+      "explorer/context": [
+        {
+          "command": "codealign.alignFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "2_workspace@99"
+        }
+      ],
       "editor/context": [
         {
           "submenu": "codealign.submenu",
@@ -99,34 +150,18 @@
         }
       ],
       "codealign.submenu": [
-        {
-          "command": "codealign.alignSmart",
-          "group": "1_main@1"
-        },
-        {
-          "command": "codealign.alignBy",
-          "group": "1_main@2"
-        },
-        {
-          "command": "codealign.alignComments",
-          "group": "1_main@3"
-        },
-        {
-          "command": "codealign.preview",
-          "group": "1_main@4"
-        },
-        {
-          "command": "codealign.alignCustom",
-          "group": "2_custom@1"
-        },
-        {
-          "command": "codealign.unalign",
-          "group": "3_unalign@1"
-        },
-        {
-          "command": "codealign.switchProfile",
-          "group": "4_profile@1"
-        }
+        { "command": "codealign.alignSmart",    "group": "1_main@1" },
+        { "command": "codealign.alignBy",        "group": "1_main@2" },
+        { "command": "codealign.alignComments",  "group": "1_main@3" },
+        { "command": "codealign.preview",        "group": "1_main@4" },
+        { "command": "codealign.alignDiff",      "group": "1_main@5" },
+        { "command": "codealign.sortAndAlign",   "group": "1_main@6" },
+        { "command": "codealign.formatTable",    "group": "1_main@7" },
+        { "command": "codealign.alignCustom",    "group": "2_custom@1" },
+        { "command": "codealign.alignRegex",     "group": "2_custom@2" },
+        { "command": "codealign.alignToColumn",  "group": "2_custom@3" },
+        { "command": "codealign.unalign",        "group": "3_unalign@1" },
+        { "command": "codealign.switchProfile",  "group": "4_profile@1" }
       ]
     },
     "submenus": [
@@ -265,6 +300,22 @@
               "minimumSpacesAfter":  { "type": "number", "minimum": 0, "maximum": 10, "description": "Minimum spaces after the separator" }
             }
           }
+        },
+        "codealign.languageProfiles": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Automatically apply a named profile based on the file language. Keys are VSCode language IDs (`python`, `yaml`, `typescript`…), values are profile names defined in `codealign.profiles`.\n\nExample:\n```json\n\"codealign.languageProfiles\": {\n  \"python\": \"Python\",\n  \"yaml\":   \"YAML\"\n}\n```",
+          "additionalProperties": { "type": "string" }
+        },
+        "codealign.livePreview.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show inline ghost text of the aligned result as soon as you select lines - no command needed. The preview disappears when you deselect."
+        },
+        "codealign.columnIndicator.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Display the separator column position in the status bar when the cursor is inside an aligned block."
         }
       }
     }

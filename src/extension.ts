@@ -1,8 +1,15 @@
 import * as vscode from 'vscode';
+import { execSync } from 'child_process';
+import * as path from 'path';
 import {
   alignBySeparator,
+  alignByRegex,
   alignComments,
+  alignToColumn,
+  alignWithChangedLines,
   detectBestSeparator,
+  findSeparatorIndex,
+  formatAsTable,
   unalignBySeparator,
   unalignComments,
   COMMENT_PREFIXES,
@@ -20,17 +27,19 @@ interface ProfileConfig {
 }
 
 interface CodeAlignConfig {
-  minSpacesBefore:         number;
-  minSpacesAfter:          number;
-  commentPrefixes:         string[];
-  smartSeparators:         string[];
-  commentMinSpaces:        number;
-  excludedLanguages:       string[];
-  smartDetectionThreshold: number;
-  tabSize:                 number;
-  separatorOccurrence:     number;
-  pasteAlignEnabled:       boolean;
-  activeProfile:           string;
+  minSpacesBefore:          number;
+  minSpacesAfter:           number;
+  commentPrefixes:          string[];
+  smartSeparators:          string[];
+  commentMinSpaces:         number;
+  excludedLanguages:        string[];
+  smartDetectionThreshold:  number;
+  tabSize:                  number;
+  separatorOccurrence:      number;
+  pasteAlignEnabled:        boolean;
+  activeProfile:            string;
+  livePreviewEnabled:       boolean;
+  columnIndicatorEnabled:   boolean;
 }
 
 interface AutoAlignConfig {
@@ -46,10 +55,17 @@ function getTabSize(editor: vscode.TextEditor): number {
 }
 
 function readConfig(editor?: vscode.TextEditor): CodeAlignConfig {
-  const cfg         = vscode.workspace.getConfiguration('codealign');
-  const activeProfile = cfg.get<string>('activeProfile', '');
-  const profiles      = cfg.get<Record<string, ProfileConfig>>('profiles', {});
-  const profileCfg    = activeProfile && profiles[activeProfile] ? profiles[activeProfile] : {};
+  const cfg = vscode.workspace.getConfiguration('codealign');
+
+  // Use manual profile, or auto-detect from file language if none is set
+  let activeProfile = cfg.get<string>('activeProfile', '');
+  if (!activeProfile && editor) {
+    const langProfiles = cfg.get<Record<string, string>>('languageProfiles', {});
+    activeProfile      = langProfiles[editor.document.languageId] ?? '';
+  }
+
+  const profiles   = cfg.get<Record<string, ProfileConfig>>('profiles', {});
+  const profileCfg = activeProfile && profiles[activeProfile] ? profiles[activeProfile] : {};
 
   return {
     minSpacesBefore:         profileCfg.minimumSpacesBefore ?? cfg.get<number>('minimumSpacesBefore', 1),
@@ -63,6 +79,8 @@ function readConfig(editor?: vscode.TextEditor): CodeAlignConfig {
     separatorOccurrence:     cfg.get<number>('separatorOccurrence', 1),
     pasteAlignEnabled:       cfg.get<boolean>('pasteAlign.enabled', false),
     activeProfile,
+    livePreviewEnabled:      cfg.get<boolean>('livePreview.enabled', false),
+    columnIndicatorEnabled:  cfg.get<boolean>('columnIndicator.enabled', true),
   };
 }
 
@@ -138,7 +156,7 @@ let isPasteAligning = false;
 
 export function activate(context: vscode.ExtensionContext): void {
 
-  // ── Align Smart ──────────────────────────────────────────────────────────
+  // -- Align Smart ----------------------------------------------------------
   registerAlignCommand(context, 'codealign.alignSmart', (lines, config) => {
     const sep = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
     if (!sep) {
@@ -149,7 +167,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return alignBySeparator(lines, sep, buildAlignOpts(config));
   });
 
-  // ── Align by… (QuickPick from smartSeparators) ───────────────────────────
+  // -- Align by… (QuickPick from smartSeparators) ---------------------------
   context.subscriptions.push(
     vscode.commands.registerCommand('codealign.alignBy', async () => {
       const editor = vscode.window.activeTextEditor;
@@ -176,7 +194,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Align by Custom Separator ─────────────────────────────────────────────
+  // -- Align by Custom Separator ---------------------------------------------
   context.subscriptions.push(
     vscode.commands.registerCommand('codealign.alignCustom', async () => {
       const editor = vscode.window.activeTextEditor;
@@ -201,7 +219,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Align Inline Comments ─────────────────────────────────────────────────
+  // -- Align Inline Comments -------------------------------------------------
   registerAlignCommand(context, 'codealign.alignComments', (lines, config) => {
     showAlignStatus('comments');
     const aligned = alignComments(lines, config.commentPrefixes, config.commentMinSpaces, config.tabSize);
@@ -211,7 +229,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return aligned;
   });
 
-  // ── Unalign ───────────────────────────────────────────────────────────────
+  // -- Unalign ---------------------------------------------------------------
   registerAlignCommand(context, 'codealign.unalign', (lines, config) => {
     const sep    = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
     const opts   = buildAlignOpts(config);
@@ -226,7 +244,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return result;
   });
 
-  // ── Preview ───────────────────────────────────────────────────────────────
+  // -- Preview ---------------------------------------------------------------
   context.subscriptions.push(
     vscode.commands.registerCommand('codealign.preview', async () => {
       const editor = vscode.window.activeTextEditor;
@@ -287,7 +305,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Switch Profile ────────────────────────────────────────────────────────
+  // -- Switch Profile --------------------------------------------------------
   context.subscriptions.push(
     vscode.commands.registerCommand('codealign.switchProfile', async () => {
       const cfg      = vscode.workspace.getConfiguration('codealign');
@@ -324,7 +342,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Status bar ────────────────────────────────────────────────────────────
+  // -- Status bar ------------------------------------------------------------
   const statusBar   = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
   statusBar.command = 'codealign.toggleAutoAlign';
   statusBar.tooltip = 'CodeAlign - click to toggle auto-align';
@@ -351,7 +369,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Toggle Auto-Align ─────────────────────────────────────────────────────
+  // -- Toggle Auto-Align -----------------------------------------------------
   context.subscriptions.push(
     vscode.commands.registerCommand('codealign.toggleAutoAlign', async () => {
       const cfg     = vscode.workspace.getConfiguration('codealign');
@@ -362,7 +380,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Auto-align on Save ────────────────────────────────────────────────────
+  // -- Auto-align on Save ----------------------------------------------------
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async doc => {
       const autoConfig = readAutoConfig();
@@ -372,7 +390,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Auto-align on Type (debounced) ────────────────────────────────────────
+  // -- Auto-align on Type (debounced) ----------------------------------------
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   context.subscriptions.push(
@@ -388,7 +406,101 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ── Align on Paste ────────────────────────────────────────────────────────
+  // -- Align Folder ---------------------------------------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.alignFolder', async (folderUri?: vscode.Uri) => {
+      if (!folderUri) {
+        const picked = await vscode.window.showOpenDialog({
+          canSelectFiles:   false,
+          canSelectFolders: true,
+          canSelectMany:    false,
+          openLabel:        'Select folder to align',
+        });
+        if (!picked || picked.length === 0) return;
+        folderUri = picked[0];
+      }
+
+      const config = readConfig();
+      const opts   = buildAlignOpts(config);
+
+      const pattern = new vscode.RelativePattern(folderUri, '**/*');
+      const exclude = '{**/node_modules/**,**/.git/**,**/out/**,**/dist/**,**/*.vsix,**/*.png,**/*.jpg,**/*.jpeg,**/*.ico,**/*.gif,**/*.svg,**/*.ttf,**/*.woff,**/*.woff2,**/*.eot,**/*.mp4,**/*.mp3,**/*.zip,**/*.tar,**/*.gz}';
+
+      let files: vscode.Uri[];
+      try {
+        files = await vscode.workspace.findFiles(pattern, exclude);
+      } catch {
+        vscode.window.showErrorMessage('CodeAlign: failed to list files in folder.');
+        return;
+      }
+
+      if (files.length === 0) {
+        vscode.window.showInformationMessage('CodeAlign: no files found in the selected folder.');
+        return;
+      }
+
+      let alignedCount   = 0;
+      let unchangedCount = 0;
+      let errorCount     = 0;
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'CodeAlign: Aligning folder...', cancellable: true },
+        async (progress, token) => {
+          const total = files.length;
+
+          for (let i = 0; i < files.length; i++) {
+            if (token.isCancellationRequested) break;
+
+            progress.report({
+              message:   `${i + 1}/${total}: ${vscode.workspace.asRelativePath(files[i])}`,
+              increment: 100 / total,
+            });
+
+            try {
+              const doc = await vscode.workspace.openTextDocument(files[i]);
+
+              if (config.excludedLanguages.includes(doc.languageId)) {
+                unchangedCount++;
+                continue;
+              }
+
+              const lines  = Array.from({ length: doc.lineCount }, (_, j) => doc.lineAt(j).text);
+              let   result = [...lines];
+
+              for (const sep of config.smartSeparators) {
+                result = alignBySeparator(result, sep, opts);
+              }
+
+              if (result.join('\n') === lines.join('\n')) {
+                unchangedCount++;
+                continue;
+              }
+
+              const fullRange = new vscode.Range(
+                new vscode.Position(0, 0),
+                new vscode.Position(doc.lineCount - 1, doc.lineAt(doc.lineCount - 1).text.length)
+              );
+
+              const edit = new vscode.WorkspaceEdit();
+              edit.replace(files[i], fullRange, result.join('\n'));
+              await vscode.workspace.applyEdit(edit);
+              await doc.save();
+              alignedCount++;
+            } catch {
+              errorCount++;
+            }
+          }
+        }
+      );
+
+      const parts = [`CodeAlign: ${alignedCount} file(s) aligned`];
+      if (unchangedCount > 0) parts.push(`${unchangedCount} unchanged`);
+      if (errorCount > 0)     parts.push(`${errorCount} error(s)`);
+      vscode.window.showInformationMessage(parts.join(', ') + '.');
+    })
+  );
+
+  // -- Align on Paste --------------------------------------------------------
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument(async event => {
       if (isPasteAligning) return;
@@ -433,9 +545,302 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     })
   );
+
+  // -- Feature 1: Align Changed Lines (Git Diff) -----------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.alignDiff', async () => {
+      const editor   = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const config   = readConfig(editor);
+      const filePath = editor.document.uri.fsPath;
+
+      if (!filePath) {
+        vscode.window.showWarningMessage('CodeAlign: save the file before using git diff alignment.');
+        return;
+      }
+
+      const changed = getGitChangedLines(filePath);
+      if (changed.size === 0) {
+        vscode.window.showInformationMessage('CodeAlign: no changed lines found (git diff HEAD).');
+        return;
+      }
+
+      const doc   = editor.document;
+      const lines = Array.from({ length: doc.lineCount }, (_, i) => doc.lineAt(i).text);
+      const sep   = detectBestSeparator(
+        [...changed].map(i => lines[i] ?? '').filter(Boolean),
+        config.smartSeparators,
+        config.smartDetectionThreshold
+      );
+
+      if (!sep) {
+        vscode.window.showInformationMessage('CodeAlign: no alignable separator found in changed lines.');
+        return;
+      }
+
+      const aligned = alignWithChangedLines(lines, sep, changed, buildAlignOpts(config));
+      if (aligned.join('\n') === lines.join('\n')) {
+        vscode.window.showInformationMessage('CodeAlign: changed lines are already aligned.');
+        return;
+      }
+
+      const fullRange = new vscode.Range(
+        new vscode.Position(0, 0),
+        new vscode.Position(doc.lineCount - 1, doc.lineAt(doc.lineCount - 1).text.length)
+      );
+      await editor.edit(edit => edit.replace(fullRange, aligned.join('\n')));
+      showAlignStatus(`${sep} (diff)`);
+    })
+  );
+
+  // -- Feature 2: Align by Regex ---------------------------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.alignRegex', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const config = readConfig(editor);
+
+      const input = await vscode.window.showInputBox({
+        title:         'CodeAlign - Align by Regex',
+        prompt:        'Enter a regex. Lines where it matches are grouped and padded to align the match.',
+        placeHolder:   'e.g.  \\s+as\\s+   or   =>   or   \\|',
+        validateInput: v => {
+          if (!v || !v.trim()) return 'Pattern cannot be empty';
+          try { new RegExp(v); return null; }
+          catch (e: any) { return `Invalid regex: ${e.message}`; }
+        },
+      });
+      if (!input) return;
+
+      const sel = getSelectedLines(editor, config.excludedLanguages);
+      if (!sel) return;
+
+      const aligned = alignByRegex(sel.lines, input.trim(), buildAlignOpts(config));
+      if (!aligned) { vscode.window.showErrorMessage('CodeAlign: invalid regex pattern.'); return; }
+
+      await applyAlignedLines(editor, sel.range, aligned);
+      showAlignStatus(`/${input}/`);
+    })
+  );
+
+  // -- Feature 3: Sort & Align -----------------------------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.sortAndAlign', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const config = readConfig(editor);
+      const sel    = getSelectedLines(editor, config.excludedLanguages);
+      if (!sel) return;
+
+      const modes = [
+        { label: 'A → Z',              description: 'alphabetical ascending',    value: 'az' },
+        { label: 'Z → A',              description: 'alphabetical descending',   value: 'za' },
+        { label: 'Shortest → Longest', description: 'by line length ascending',  value: 'len-asc' },
+        { label: 'Longest → Shortest', description: 'by line length descending', value: 'len-desc' },
+        { label: 'By value  A → Z',    description: 'content after separator',   value: 'val-az' },
+        { label: 'By value  Z → A',    description: 'content after separator',   value: 'val-za' },
+      ];
+
+      const picked = await vscode.window.showQuickPick(modes, {
+        title: 'CodeAlign - Sort & Align', placeHolder: 'Choose sort order',
+      });
+      if (!picked) return;
+
+      const sep      = detectBestSeparator(sel.lines, config.smartSeparators, config.smartDetectionThreshold);
+      const getValue = (line: string) => {
+        if (!sep) return line.trim();
+        const idx = findSeparatorIndex(line, sep);
+        return idx >= 0 ? line.substring(idx + sep.length).trim() : line.trim();
+      };
+
+      const sorted = [...sel.lines].sort((a, b) => {
+        switch (picked.value) {
+          case 'az':       return a.localeCompare(b);
+          case 'za':       return b.localeCompare(a);
+          case 'len-asc':  return a.length - b.length;
+          case 'len-desc': return b.length - a.length;
+          case 'val-az':   return getValue(a).localeCompare(getValue(b));
+          case 'val-za':   return getValue(b).localeCompare(getValue(a));
+          default:         return 0;
+        }
+      });
+
+      const aligned = sep ? alignBySeparator(sorted, sep, buildAlignOpts(config)) : sorted;
+      await applyAlignedLines(editor, sel.range, aligned);
+      showAlignStatus(sep ? `sort + ${sep}` : 'sort');
+    })
+  );
+
+  // -- Feature 5: Format as Table --------------------------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.formatTable', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const config = readConfig(editor);
+      const sel    = getSelectedLines(editor, config.excludedLanguages);
+      if (!sel) return;
+
+      if (sel.lines.length < 2) {
+        vscode.window.showInformationMessage('CodeAlign: select at least 2 lines to format as a table.');
+        return;
+      }
+
+      const formatted = formatAsTable(sel.lines);
+      await applyAlignedLines(editor, sel.range, formatted);
+      showAlignStatus('table');
+    })
+  );
+
+  // -- Feature 6: Align to Column --------------------------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.alignToColumn', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+      const config = readConfig(editor);
+      const sel    = getSelectedLines(editor, config.excludedLanguages);
+      if (!sel) return;
+
+      const colInput = await vscode.window.showInputBox({
+        title:         'CodeAlign - Align to Column',
+        prompt:        'Target column number (1-based). The separator will be padded to reach that column.',
+        placeHolder:   'e.g.  40',
+        validateInput: v => {
+          const n = parseInt(v ?? '', 10);
+          return isNaN(n) || n < 1 ? 'Enter a positive integer' : null;
+        },
+      });
+      if (!colInput) return;
+
+      const column  = parseInt(colInput, 10) - 1;
+      const sep     = detectBestSeparator(sel.lines, config.smartSeparators, config.smartDetectionThreshold);
+      const aligned = alignToColumn(sel.lines, column, sep ?? undefined, buildAlignOpts(config));
+
+      await applyAlignedLines(editor, sel.range, aligned);
+      showAlignStatus(`col ${parseInt(colInput, 10)}`);
+    })
+  );
+
+  // -- Feature 7: Column indicator status bar --------------------------------
+  const columnBar       = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 98);
+  columnBar.tooltip     = 'Aligned separator column - CodeAlign';
+  context.subscriptions.push(columnBar);
+
+  function updateColumnIndicator(editor: vscode.TextEditor | undefined): void {
+    if (!editor) { columnBar.hide(); return; }
+    const config = readConfig(editor);
+    if (!config.columnIndicatorEnabled) { columnBar.hide(); return; }
+
+    const doc     = editor.document;
+    const lineNum = editor.selection.active.line;
+    const line    = doc.lineAt(lineNum).text;
+    const cols:   string[] = [];
+
+    for (const sep of config.smartSeparators) {
+      const pos = findSeparatorIndex(line, sep);
+      if (pos < 0) continue;
+      let confirmed = false;
+      for (const delta of [-1, 1]) {
+        const adj = lineNum + delta;
+        if (adj < 0 || adj >= doc.lineCount) continue;
+        if (findSeparatorIndex(doc.lineAt(adj).text, sep) === pos) { confirmed = true; break; }
+      }
+      if (confirmed) cols.push(`${sep}:${pos + 1}`);
+    }
+
+    if (cols.length === 0) { columnBar.hide(); return; }
+    columnBar.text = `$(list-ordered) ${cols.join('  ')}`;
+    columnBar.show();
+  }
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection(e => updateColumnIndicator(e.textEditor))
+  );
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(e => updateColumnIndicator(e))
+  );
+
+  // -- Feature 8: Live inline preview ---------------------------------------
+  let livePreviewDim:   vscode.TextEditorDecorationType | undefined;
+  let livePreviewGhost: vscode.TextEditorDecorationType | undefined;
+  let livePreviewTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const clearLivePreview = () => {
+    livePreviewDim?.dispose();   livePreviewDim   = undefined;
+    livePreviewGhost?.dispose(); livePreviewGhost = undefined;
+  };
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection(event => {
+      clearTimeout(livePreviewTimer);
+      clearLivePreview();
+
+      const editor = event.textEditor;
+      const config = readConfig(editor);
+      if (!config.livePreviewEnabled) return;
+      if (editor.selection.isEmpty) return;
+
+      const startLine = editor.selection.start.line;
+      const endLine   = editor.selection.end.line;
+      if (endLine <= startLine) return;
+
+      livePreviewTimer = setTimeout(() => {
+        const doc     = editor.document;
+        const lines   = Array.from({ length: endLine - startLine + 1 }, (_, i) =>
+          doc.lineAt(startLine + i).text
+        );
+        const sep = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
+        if (!sep) return;
+
+        const aligned      = alignBySeparator(lines, sep, buildAlignOpts(config));
+        const dimRanges:   vscode.Range[]             = [];
+        const ghostOpts:   vscode.DecorationOptions[] = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          if (aligned[i] === lines[i]) continue;
+          const ln  = startLine + i;
+          const len = lines[i].length;
+          dimRanges.push(new vscode.Range(ln, 0, ln, len));
+          ghostOpts.push({
+            range:         new vscode.Range(ln, len, ln, len),
+            renderOptions: { after: { contentText: `  →  ${aligned[i].trimStart()}` } },
+          });
+        }
+        if (dimRanges.length === 0) return;
+
+        livePreviewDim = vscode.window.createTextEditorDecorationType({ opacity: '0.45' });
+        livePreviewGhost = vscode.window.createTextEditorDecorationType({
+          after: { color: new vscode.ThemeColor('editorGhostText.foreground'), fontStyle: 'italic' },
+        });
+        editor.setDecorations(livePreviewDim,   dimRanges);
+        editor.setDecorations(livePreviewGhost, ghostOpts);
+      }, 250);
+    })
+  );
 }
 
 export function deactivate(): void {}
+
+// -- Git diff helper -------------------------------------------------------
+function getGitChangedLines(filePath: string): Set<number> {
+  try {
+    const out = execSync(`git diff HEAD -U0 -- "${filePath}"`, {
+      cwd:      path.dirname(filePath),
+      encoding: 'utf-8',
+      stdio:    ['pipe', 'pipe', 'pipe'],
+    });
+    const changed = new Set<number>();
+    const re      = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm;
+    let   m:        RegExpExecArray | null;
+    while ((m = re.exec(out)) !== null) {
+      const start = parseInt(m[1], 10);
+      const count = m[2] !== undefined ? parseInt(m[2], 10) : 1;
+      for (let i = 0; i < count; i++) changed.add(start + i - 1);
+    }
+    return changed;
+  } catch {
+    return new Set();
+  }
+}
 
 function separatorLabel(sep: string): string {
   const labels: Record<string, string> = {

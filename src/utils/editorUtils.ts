@@ -21,23 +21,21 @@ export function getSelectedLines(
     return null;
   }
 
+  const doc       = editor.document;
   const selection = editor.selection;
-  if (selection.isEmpty) {
-    vscode.window.showInformationMessage('CodeAlign: select the lines you want to align first.');
-    return null;
-  }
 
-  const startLine       = selection.start.line;
-  const endLine         = selection.end.line;
+  // No selection → fall back to entire document
+  const startLine = selection.isEmpty ? 0 : selection.start.line;
+  const endLine   = selection.isEmpty ? doc.lineCount - 1 : selection.end.line;
+
   const lines: string[] = [];
-
   for (let i = startLine; i <= endLine; i++) {
-    lines.push(editor.document.lineAt(i).text);
+    lines.push(doc.lineAt(i).text);
   }
 
   const range = new vscode.Range(
     new vscode.Position(startLine, 0),
-    new vscode.Position(endLine, editor.document.lineAt(endLine).text.length)
+    new vscode.Position(endLine, doc.lineAt(endLine).text.length)
   );
 
   return { lines, range };
