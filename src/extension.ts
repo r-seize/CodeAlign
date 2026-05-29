@@ -40,6 +40,7 @@ interface CodeAlignConfig {
   activeProfile:            string;
   livePreviewEnabled:       boolean;
   columnIndicatorEnabled:   boolean;
+  smartAlignMultiPass:      boolean;
 }
 
 interface AutoAlignConfig {
@@ -81,6 +82,7 @@ function readConfig(editor?: vscode.TextEditor): CodeAlignConfig {
     activeProfile,
     livePreviewEnabled:      cfg.get<boolean>('livePreview.enabled', false),
     columnIndicatorEnabled:  cfg.get<boolean>('columnIndicator.enabled', true),
+    smartAlignMultiPass:     cfg.get<boolean>('smartAlign.multiPass', false),
   };
 }
 
@@ -158,6 +160,20 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // -- Align Smart ----------------------------------------------------------
   registerAlignCommand(context, 'codealign.alignSmart', (lines, config) => {
+    if (config.smartAlignMultiPass) {
+      const opts = buildAlignOpts(config);
+      let result = [...lines];
+      for (const sep of config.smartSeparators) {
+        result = alignBySeparator(result, sep, opts);
+      }
+      if (result.join('\n') === lines.join('\n')) {
+        vscode.window.showInformationMessage('CodeAlign: nothing to align in the selection.');
+        return null;
+      }
+      showAlignStatus(config.smartSeparators.join(' · '));
+      return result;
+    }
+
     const sep = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
     if (!sep) {
       vscode.window.showInformationMessage('CodeAlign: no alignable separator detected in the selection.');

@@ -2,7 +2,7 @@
   "name": "code-align",
   "displayName": "CodeAlign",
   "description": "Universal text alignment for VS Code - align variables, operators, comments, tables and more across any language",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "r-seize",
   "icon": "images/icon.png",
   "repository": {
@@ -306,6 +306,11 @@
           "default": {},
           "markdownDescription": "Automatically apply a named profile based on the file language. Keys are VSCode language IDs (`python`, `yaml`, `typescript`…), values are profile names defined in `codealign.profiles`.\n\nExample:\n```json\n\"codealign.languageProfiles\": {\n  \"python\": \"Python\",\n  \"yaml\":   \"YAML\"\n}\n```",
           "additionalProperties": { "type": "string" }
+        },
+        "codealign.smartAlign.multiPass": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, Align Smart (Ctrl+Alt+A) processes every separator in smartSeparators sequentially instead of picking only the best match. Useful when your code mixes multiple separator types (e.g. => and =)."
         },
         "codealign.livePreview.enabled": {
           "type": "boolean",

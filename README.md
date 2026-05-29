@@ -85,6 +85,7 @@ Rebind anything via `Ctrl+K Ctrl+S` → search `CodeAlign`.
 | `smartDetectionThreshold` | `0.5` | Fraction of lines that must have the separator for smart detection |
 | `excludedLanguages` | `[]` | Language IDs where CodeAlign is disabled |
 | `pasteAlign.enabled` | `false` | Auto-align multi-line pastes |
+| `smartAlign.multiPass` | `false` | When enabled, `Align Smart` processes **all** separators in `smartSeparators` sequentially instead of picking only the best match — useful when your code mixes `=>` and `=` for example |
 | `livePreview.enabled` | `false` | Show aligned ghost text as you select lines |
 | `columnIndicator.enabled` | `true` | Show separator column in the status bar |
 
@@ -147,6 +148,7 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
   "codealign.autoAlign.separators": ["="],
 
   // -- UI
+  "codealign.smartAlign.multiPass":     false,
   "codealign.livePreview.enabled":      false,
   "codealign.columnIndicator.enabled":  true,
 
