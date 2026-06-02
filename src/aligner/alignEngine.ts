@@ -570,8 +570,9 @@ export function formatAsTable(lines: string[]): string[] {
 
     const sepRow = '| ' + colWidths.map(w => '-'.repeat(w)).join(' | ') + ' |';
 
-    const result = [fmtRow(dataRows[0]), sepRow];
-    for (let i = 1; i < dataRows.length; i++) result.push(fmtRow(dataRows[i]));
+    const indent = lines[0].match(/^(\s*)/)?.[1] ?? '';
+    const result = [indent + fmtRow(dataRows[0]), indent + sepRow];
+    for (let i = 1; i < dataRows.length; i++) result.push(indent + fmtRow(dataRows[i]));
     return result;
 }
 

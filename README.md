@@ -43,7 +43,7 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 | Command | Description |
 |---|---|
 | **Align Smart** | Auto-detect best separator and align |
-| **Align by…** | QuickPick from your `smartSeparators` list |
+| **Align by…** | QuickPick from your `separators` list |
 | **Align by Custom Separator** | Any separator string |
 | **Align by Regex** | Any regex pattern as the alignment target |
 | **Align Changed Lines (Git Diff)** | Only align groups containing git-modified lines |
@@ -78,14 +78,14 @@ Rebind anything via `Ctrl+K Ctrl+S` → search `CodeAlign`.
 |---|---|---|
 | `minimumSpacesBefore` | `1` | Spaces between content and separator |
 | `minimumSpacesAfter` | `1` | Spaces after the separator |
-| `smartSeparators` | `["="]` | Separator candidates for auto-detect and the **Align by…** QuickPick |
+| `separators` | `["="]` | Separator candidates for auto-detect and the **Align by…** QuickPick |
 | `commentSeparators` | `["//","#","--",";"]` | Comment prefixes for inline comment alignment |
 | `commentMinSpaces` | `2` | Min spaces between code and inline comment |
 | `separatorOccurrence` | `1` | Which occurrence to align on (1 = first, 2 = second…) |
 | `smartDetectionThreshold` | `0.5` | Fraction of lines that must have the separator for smart detection |
 | `excludedLanguages` | `[]` | Language IDs where CodeAlign is disabled |
 | `pasteAlign.enabled` | `false` | Auto-align multi-line pastes |
-| `smartAlign.multiPass` | `false` | When enabled, `Align Smart` processes **all** separators in `smartSeparators` sequentially instead of picking only the best match — useful when your code mixes `=>` and `=` for example |
+| `smartAlign.multiPass` | `false` | When enabled, `Align Smart` processes **all** separators in `separators` sequentially instead of picking only the best match - useful when your code mixes `=>` and `=` for example |
 | `livePreview.enabled` | `false` | Show aligned ghost text as you select lines |
 | `columnIndicator.enabled` | `true` | Show separator column in the status bar |
 
@@ -101,7 +101,8 @@ Rebind anything via `Ctrl+K Ctrl+S` → search `CodeAlign`.
 | `autoAlign.enabled` | `false` | Enable background alignment |
 | `autoAlign.trigger` | `"onSave"` | `"onSave"` or `"onType"` |
 | `autoAlign.debounceMs` | `400` | Keystroke delay for `onType` mode |
-| `autoAlign.separators` | `["="]` | Separators used during auto-alignment |
+
+Auto-align uses `codealign.separators` - no separate list needed.
 
 ### Profiles & language auto-detection
 
@@ -131,7 +132,8 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
   "codealign.minimumSpacesBefore": 1,
   "codealign.minimumSpacesAfter":  1,
 
-  // -- Separators tSeparators":         ["=>", "=", ":"],
+  // -- Separators (single source of truth for all alignment operations)
+  "codealign.separators":              ["=>", "=", ":"],
   "codealign.commentSeparators":       ["//", "#", "--", ";"],
   "codealign.commentMinSpaces":        2,
   "codealign.separatorOccurrence":     1,
@@ -141,11 +143,10 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
   "codealign.pasteAlign.enabled":  true,
   "codealign.excludedLanguages":   ["markdown"],
 
-  // -- Auto-align
+  // -- Auto-align (uses codealign.separators)
   "codealign.autoAlign.enabled":    true,
   "codealign.autoAlign.trigger":    "onSave",
   "codealign.autoAlign.debounceMs": 400,
-  "codealign.autoAlign.separators": ["="],
 
   // -- UI
   "codealign.smartAlign.multiPass":     false,

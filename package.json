@@ -200,7 +200,7 @@
           ],
           "description": "Comment prefixes used for inline comment detection and alignment"
         },
-        "codealign.smartSeparators": {
+        "codealign.separators": {
           "type": "array",
           "items": {
             "type": "string",
@@ -219,7 +219,7 @@
             ]
           },
           "default": ["="],
-          "description": "Separator candidates tried during smart auto-detection. Order matters - multi-char operators must come before single-char ones. By default only = is active; add others as needed."
+          "description": "Separators used for all alignment operations: smart detection, auto-align, Align by… QuickPick, and multi-pass. Order matters - multi-char operators must come before single-char ones (e.g. => before =)."
         },
         "codealign.commentMinSpaces": {
           "type": "number",
@@ -265,12 +265,6 @@
           "maximum": 5000,
           "description": "Delay in milliseconds after the last keystroke before auto-aligning (onType mode only)"
         },
-        "codealign.autoAlign.separators": {
-          "type": "array",
-          "items": { "type": "string" },
-          "default": ["="],
-          "description": "Separators to use during auto-alignment (keep short to avoid unintended changes)"
-        },
         "codealign.separatorOccurrence": {
           "type": "number",
           "default": 1,
@@ -281,7 +275,7 @@
         "codealign.pasteAlign.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically align code when pasting multi-line blocks. Uses the separators configured in codealign.smartSeparators."
+          "description": "Automatically align code when pasting multi-line blocks. Uses codealign.separators."
         },
         "codealign.activeProfile": {
           "type": "string",
@@ -310,7 +304,7 @@
         "codealign.smartAlign.multiPass": {
           "type": "boolean",
           "default": false,
-          "description": "When enabled, Align Smart (Ctrl+Alt+A) processes every separator in smartSeparators sequentially instead of picking only the best match. Useful when your code mixes multiple separator types (e.g. => and =)."
+          "description": "When enabled, Align Smart (Ctrl+Alt+A) processes every separator in codealign.separators sequentially instead of picking only the best match. Useful when your code mixes multiple separator types (e.g. => and =)."
         },
         "codealign.livePreview.enabled": {
           "type": "boolean",

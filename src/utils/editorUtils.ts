@@ -26,7 +26,14 @@ export function getSelectedLines(
 
   // No selection → fall back to entire document
   const startLine = selection.isEmpty ? 0 : selection.start.line;
-  const endLine   = selection.isEmpty ? doc.lineCount - 1 : selection.end.line;
+  let   endLine   = selection.isEmpty ? doc.lineCount - 1 : selection.end.line;
+
+  // When dragging or using shift+click, VSCode places the end cursor at column 0
+  // of the line AFTER the last visually selected line. Exclude that line so it
+  // doesn't silently break the last alignment group.
+  if (!selection.isEmpty && selection.end.character === 0 && endLine > startLine) {
+    endLine -= 1;
+  }
 
   const lines: string[] = [];
   for (let i = startLine; i <= endLine; i++) {

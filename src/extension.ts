@@ -30,7 +30,7 @@ interface CodeAlignConfig {
   minSpacesBefore:          number;
   minSpacesAfter:           number;
   commentPrefixes:          string[];
-  smartSeparators:          string[];
+  separators:               string[];
   commentMinSpaces:         number;
   excludedLanguages:        string[];
   smartDetectionThreshold:  number;
@@ -72,7 +72,7 @@ function readConfig(editor?: vscode.TextEditor): CodeAlignConfig {
     minSpacesBefore:         profileCfg.minimumSpacesBefore ?? cfg.get<number>('minimumSpacesBefore', 1),
     minSpacesAfter:          profileCfg.minimumSpacesAfter  ?? cfg.get<number>('minimumSpacesAfter', 1),
     commentPrefixes:         cfg.get<string[]>('commentSeparators', COMMENT_PREFIXES),
-    smartSeparators:         profileCfg.separators          ?? cfg.get<string[]>('smartSeparators', ['=']),
+    separators:              profileCfg.separators          ?? cfg.get<string[]>('separators', ['=']),
     commentMinSpaces:        cfg.get<number>('commentMinSpaces', 2),
     excludedLanguages:       cfg.get<string[]>('excludedLanguages', []),
     smartDetectionThreshold: cfg.get<number>('smartDetectionThreshold', 0.5),
@@ -92,7 +92,7 @@ function readAutoConfig(): AutoAlignConfig {
     enabled:    cfg.get<boolean>('autoAlign.enabled', false),
     trigger:    cfg.get<'onSave' | 'onType'>('autoAlign.trigger', 'onSave'),
     debounceMs: cfg.get<number>('autoAlign.debounceMs', 400),
-    separators: cfg.get<string[]>('autoAlign.separators', ['=']),
+    separators: cfg.get<string[]>('separators', ['=']),
   };
 }
 
@@ -149,6 +149,11 @@ function registerAlignCommand(
     const aligned = fn(sel.lines, config);
     if (!aligned) return;
 
+    if (aligned.join('\n') === sel.lines.join('\n')) {
+      vscode.window.showInformationMessage('CodeAlign: already aligned - no changes needed.');
+      return;
+    }
+
     await applyAlignedLines(editor, sel.range, aligned);
   });
   context.subscriptions.push(disposable);
@@ -163,18 +168,18 @@ export function activate(context: vscode.ExtensionContext): void {
     if (config.smartAlignMultiPass) {
       const opts = buildAlignOpts(config);
       let result = [...lines];
-      for (const sep of config.smartSeparators) {
+      for (const sep of config.separators) {
         result = alignBySeparator(result, sep, opts);
       }
       if (result.join('\n') === lines.join('\n')) {
         vscode.window.showInformationMessage('CodeAlign: nothing to align in the selection.');
         return null;
       }
-      showAlignStatus(config.smartSeparators.join(' · '));
+      showAlignStatus(config.separators.join(' · '));
       return result;
     }
 
-    const sep = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
+    const sep = detectBestSeparator(lines, config.separators, config.smartDetectionThreshold);
     if (!sep) {
       vscode.window.showInformationMessage('CodeAlign: no alignable separator detected in the selection.');
       return null;
@@ -190,10 +195,13 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!editor) return;
 
       const config = readConfig(editor);
-      const items  = config.smartSeparators.map(sep => ({
-        label:       sep,
-        description: separatorLabel(sep),
-      }));
+      const items: (vscode.QuickPickItem & { value?: string })[] = [
+        ...config.separators.map(sep => ({
+          label:       sep,
+          description: separatorLabel(sep),
+        })),
+        { label: '$(edit) Custom separator…', description: 'enter any separator', value: '__custom__' },
+      ];
 
       const picked = await vscode.window.showQuickPick(items, {
         title:       'CodeAlign - Align by separator',
@@ -201,12 +209,24 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       if (!picked) return;
 
+      let sep = picked.label;
+      if ((picked as { value?: string }).value === '__custom__') {
+        const input = await vscode.window.showInputBox({
+          title:         'CodeAlign - Custom Separator',
+          prompt:        'Enter the separator to align by',
+          placeHolder:   'e.g.  =   :   |   =>   ->',
+          validateInput: v => (!v || v.trim().length === 0) ? 'Separator cannot be empty' : null,
+        });
+        if (!input) return;
+        sep = input.trim();
+      }
+
       const sel = getSelectedLines(editor, config.excludedLanguages);
       if (!sel) return;
 
-      const aligned = alignBySeparator(sel.lines, picked.label, buildAlignOpts(config));
+      const aligned = alignBySeparator(sel.lines, sep, buildAlignOpts(config));
       await applyAlignedLines(editor, sel.range, aligned);
-      showAlignStatus(picked.label);
+      showAlignStatus(sep);
     })
   );
 
@@ -247,7 +267,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // -- Unalign ---------------------------------------------------------------
   registerAlignCommand(context, 'codealign.unalign', (lines, config) => {
-    const sep    = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
+    const sep    = detectBestSeparator(lines, config.separators, config.smartDetectionThreshold);
     const opts   = buildAlignOpts(config);
     const after  = sep ? unalignBySeparator(lines, sep, opts) : lines;
     const result = unalignComments(after, config.commentPrefixes, 1);
@@ -270,7 +290,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const sel    = getSelectedLines(editor, config.excludedLanguages);
       if (!sel) return;
 
-      const sep = detectBestSeparator(sel.lines, config.smartSeparators, config.smartDetectionThreshold);
+      const sep = detectBestSeparator(sel.lines, config.separators, config.smartDetectionThreshold);
       if (!sep) {
         vscode.window.showInformationMessage('CodeAlign: no separator detected for preview.');
         return;
@@ -413,6 +433,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeTextDocument(event => {
       const autoConfig = readAutoConfig();
       if (!autoConfig.enabled || autoConfig.trigger !== 'onType') return;
+      if (isPasteAligning) return;
 
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(async () => {
@@ -483,7 +504,7 @@ export function activate(context: vscode.ExtensionContext): void {
               const lines  = Array.from({ length: doc.lineCount }, (_, j) => doc.lineAt(j).text);
               let   result = [...lines];
 
-              for (const sep of config.smartSeparators) {
+              for (const sep of config.separators) {
                 result = alignBySeparator(result, sep, opts);
               }
 
@@ -541,7 +562,7 @@ export function activate(context: vscode.ExtensionContext): void {
         (_, i) => editor.document.lineAt(startLine + i).text
       );
 
-      const sep = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
+      const sep = detectBestSeparator(lines, config.separators, config.smartDetectionThreshold);
       if (!sep) return;
 
       const opts    = buildAlignOpts(readConfig(editor));
@@ -585,7 +606,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const lines = Array.from({ length: doc.lineCount }, (_, i) => doc.lineAt(i).text);
       const sep   = detectBestSeparator(
         [...changed].map(i => lines[i] ?? '').filter(Boolean),
-        config.smartSeparators,
+        config.separators,
         config.smartDetectionThreshold
       );
 
@@ -662,7 +683,7 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       if (!picked) return;
 
-      const sep      = detectBestSeparator(sel.lines, config.smartSeparators, config.smartDetectionThreshold);
+      const sep      = detectBestSeparator(sel.lines, config.separators, config.smartDetectionThreshold);
       const getValue = (line: string) => {
         if (!sep) return line.trim();
         const idx = findSeparatorIndex(line, sep);
@@ -728,7 +749,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!colInput) return;
 
       const column  = parseInt(colInput, 10) - 1;
-      const sep     = detectBestSeparator(sel.lines, config.smartSeparators, config.smartDetectionThreshold);
+      const sep     = detectBestSeparator(sel.lines, config.separators, config.smartDetectionThreshold);
       const aligned = alignToColumn(sel.lines, column, sep ?? undefined, buildAlignOpts(config));
 
       await applyAlignedLines(editor, sel.range, aligned);
@@ -751,7 +772,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const line    = doc.lineAt(lineNum).text;
     const cols:   string[] = [];
 
-    for (const sep of config.smartSeparators) {
+    for (const sep of config.separators) {
       const pos = findSeparatorIndex(line, sep);
       if (pos < 0) continue;
       let confirmed = false;
@@ -786,6 +807,13 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument(() => {
+      clearTimeout(livePreviewTimer);
+      clearLivePreview();
+    })
+  );
+
+  context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection(event => {
       clearTimeout(livePreviewTimer);
       clearLivePreview();
@@ -804,7 +832,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const lines   = Array.from({ length: endLine - startLine + 1 }, (_, i) =>
           doc.lineAt(startLine + i).text
         );
-        const sep = detectBestSeparator(lines, config.smartSeparators, config.smartDetectionThreshold);
+        const sep = detectBestSeparator(lines, config.separators, config.smartDetectionThreshold);
         if (!sep) return;
 
         const aligned      = alignBySeparator(lines, sep, buildAlignOpts(config));
