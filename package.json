@@ -2,7 +2,7 @@
   "name": "code-align",
   "displayName": "CodeAlign",
   "description": "Universal text alignment for VS Code - align variables, operators, comments, tables and more across any language",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "r-seize",
   "icon": "images/icon.png",
   "repository": {

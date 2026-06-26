@@ -133,7 +133,7 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
   "codealign.minimumSpacesAfter":  1,
 
   // -- Separators (single source of truth for all alignment operations)
-  "codealign.separators":              ["=>", "=", ":"],
+  "codealign.separators":              ["=>", "=", ":", "|"],
   "codealign.commentSeparators":       ["//", "#", "--", ";"],
   "codealign.commentMinSpaces":        2,
   "codealign.separatorOccurrence":     1,
@@ -141,7 +141,7 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
 
   // -- Paste & exclusions
   "codealign.pasteAlign.enabled":  true,
-  "codealign.excludedLanguages":   ["markdown"],
+  "codealign.excludedLanguages":   [],
 
   // -- Auto-align (uses codealign.separators)
   "codealign.autoAlign.enabled":    true,
@@ -156,17 +156,18 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
   // -- Profiles 
   "codealign.activeProfile": "",
   "codealign.profiles": {
-    "Python": { "separators": ["=", ":"], "minimumSpacesBefore": 1, "minimumSpacesAfter": 1 },
-    "YAML":   { "separators": [":"],      "minimumSpacesBefore": 0, "minimumSpacesAfter": 1 },
-    "Tables": { "separators": ["|", ","] },
-    "Go":     { "separators": [":=", "="] }
+    "Python":   { "separators": ["=", ":"], "minimumSpacesBefore": 1, "minimumSpacesAfter": 1 },
+    "YAML":     { "separators": [":"],      "minimumSpacesBefore": 0, "minimumSpacesAfter": 1 },
+    "Markdown": { "separators": ["|", ","], "minimumSpacesBefore": 1, "minimumSpacesAfter": 1 },
+    "Go":       { "separators": [":=", "="] }
   },
 
   // -- Language auto-profile 
   "codealign.languageProfiles": {
-    "python":     "Python",
-    "yaml":       "YAML",
-    "go":         "Go"
+    "python":   "Python",
+    "yaml":     "YAML",
+    "go":       "Go",
+    "markdown": "Markdown"
   }
 }
 ```

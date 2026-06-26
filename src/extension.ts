@@ -184,6 +184,14 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage('CodeAlign: no alignable separator detected in the selection.');
       return null;
     }
+
+    // Markdown table: when | is the best separator and lines look like a table, use Format as Table
+    const dataLines = lines.filter(l => l.trim().length > 0);
+    if (sep === '|' && dataLines.length >= 2 && dataLines.every(l => l.trim().startsWith('|'))) {
+      showAlignStatus('| (table)');
+      return formatAsTable(lines);
+    }
+
     showAlignStatus(sep);
     return alignBySeparator(lines, sep, buildAlignOpts(config));
   });
