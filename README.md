@@ -2,6 +2,11 @@
 
 Universal text alignment for VS Code - variables, operators, comments, tables and more, in any language or file format.
 
+[![Version](https://vsmarketplacebadges.dev/version/r-seize.code-align.png)](https://marketplace.visualstudio.com/items?itemName=r-seize.code-align)
+[![Installs](https://vsmarketplacebadges.dev/installs/r-seize.code-align.png)](https://marketplace.visualstudio.com/items?itemName=r-seize.code-align)
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.png)](LICENSE.txt)
+[![Maintained](https://img.shields.io/badge/Maintained-yes-green.png)](https://github.com/r-seize/CodeAlign)
+
 ![CodeAlign demo](https://raw.githubusercontent.com/r-seize/CodeAlign/main/images/demo.gif)
 
 ## Features
@@ -275,6 +280,18 @@ Collapses aligned spaces back to the configured minimum - useful before re-align
 - **Parentheses:** `=` inside `(...)` is ignored (for-loops, default params).
 - **Compound operators:** `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `~=`, `??=` are never broken.
 - **Mixed indent:** tabs and spaces are normalised using the editor's `tabSize` for grouping; actual characters are preserved.
+- **Code fences:** content inside ` ``` ` and `~~~` blocks is never modified - syntax is preserved as-is.
+- **Markdown tables:** `Ctrl+Alt+A` on pipe-separated lines auto-formats column widths instead of aligning on `|` - even when `=` appears inside cells.
+
+## Why doesn't Ctrl+Alt+A change anything?
+
+CodeAlign does nothing rather than risk breaking your file's syntax when no separator is detected clearly enough above the threshold. This is intentional - a false alignment can introduce syntax errors in code files.
+
+**What to do:**
+- **Select a specific block** instead of the entire file - alignment works on targeted sections
+- **Lower `codealign.smartDetectionThreshold`** (e.g. `0.2`) if your block has few lines
+- **Use `Align by…`** (right-click → CodeAlign) to force a specific separator
+- **Use `Format as Table`** for Markdown tables instead of `Align Smart`
 
 ## Supported languages
 

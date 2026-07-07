@@ -184,13 +184,24 @@ function findConsecutiveGroups(
         groupIndent = '';
     };
 
+    let inCodeFence = false;
+
     for (let i = 0; i <= lines.length; i++) {
         if (i === lines.length) {
             closeGroup(i);
             break;
         }
 
-        const line     = lines[i];
+        const line = lines[i];
+
+        // Code fences (``` or ~~~) protect their content - never align inside them
+        if (/^\s*(`{3,}|~{3,})/.test(line)) {
+            closeGroup(i);
+            inCodeFence = !inCodeFence;
+            continue;
+        }
+        if (inCodeFence) { closeGroup(i); continue; }
+
         const codePart = getCodePart(line, commentPrefixes);
         const hasSep   = codePart.length > 0
             && findSeparatorIndex(codePart, separator, separatorOccurrence) >= 0

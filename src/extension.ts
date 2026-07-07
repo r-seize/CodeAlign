@@ -179,17 +179,20 @@ export function activate(context: vscode.ExtensionContext): void {
       return result;
     }
 
-    const sep = detectBestSeparator(lines, config.separators, config.smartDetectionThreshold);
-    if (!sep) {
-      vscode.window.showInformationMessage('CodeAlign: no alignable separator detected in the selection.');
-      return null;
-    }
-
-    // Markdown table: when | is the best separator and lines look like a table, use Format as Table
+    // Markdown table detection before separator detection - cells may contain = or other separators
     const dataLines = lines.filter(l => l.trim().length > 0);
-    if (sep === '|' && dataLines.length >= 2 && dataLines.every(l => l.trim().startsWith('|'))) {
+    if (dataLines.length >= 2 && dataLines.every(l => l.trim().startsWith('|'))) {
       showAlignStatus('| (table)');
       return formatAsTable(lines);
+    }
+
+    const sep = detectBestSeparator(lines, config.separators, config.smartDetectionThreshold);
+    if (!sep) {
+      vscode.window.showInformationMessage(
+        'CodeAlign: nothing to align - no separator found above the detection threshold. ' +
+        'Try selecting a specific block, or lower codealign.smartDetectionThreshold.'
+      );
+      return null;
     }
 
     showAlignStatus(sep);
