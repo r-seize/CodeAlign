@@ -2,7 +2,7 @@
   "name": "code-align",
   "displayName": "CodeAlign",
   "description": "Universal text alignment for VS Code - align variables, operators, comments, tables and more across any language",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "publisher": "r-seize",
   "icon": "images/icon.png",
   "repository": {
@@ -98,6 +98,16 @@
         "command": "codealign.alignToColumn",
         "title": "Align to Column...",
         "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.alignBlockAtCursor",
+        "title": "Align Block at Cursor",
+        "category": "CodeAlign"
+      },
+      {
+        "command": "codealign.realignLast",
+        "title": "Re-align Last",
+        "category": "CodeAlign"
       }
     ],
     "keybindings": [
@@ -123,6 +133,18 @@
         "command": "codealign.sortAndAlign",
         "key": "ctrl+alt+s",
         "mac": "cmd+alt+s",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "codealign.alignBlockAtCursor",
+        "key": "ctrl+alt+b",
+        "mac": "cmd+alt+b",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "codealign.realignLast",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
         "when": "editorTextFocus"
       }
     ],
@@ -150,18 +172,20 @@
         }
       ],
       "codealign.submenu": [
-        { "command": "codealign.alignSmart",    "group": "1_main@1" },
-        { "command": "codealign.alignBy",        "group": "1_main@2" },
-        { "command": "codealign.alignComments",  "group": "1_main@3" },
-        { "command": "codealign.preview",        "group": "1_main@4" },
-        { "command": "codealign.alignDiff",      "group": "1_main@5" },
-        { "command": "codealign.sortAndAlign",   "group": "1_main@6" },
-        { "command": "codealign.formatTable",    "group": "1_main@7" },
-        { "command": "codealign.alignCustom",    "group": "2_custom@1" },
-        { "command": "codealign.alignRegex",     "group": "2_custom@2" },
-        { "command": "codealign.alignToColumn",  "group": "2_custom@3" },
-        { "command": "codealign.unalign",        "group": "3_unalign@1" },
-        { "command": "codealign.switchProfile",  "group": "4_profile@1" }
+        { "command": "codealign.alignSmart",         "group": "1_main@1" },
+        { "command": "codealign.alignBlockAtCursor",  "group": "1_main@2" },
+        { "command": "codealign.alignBy",             "group": "1_main@3" },
+        { "command": "codealign.alignComments",       "group": "1_main@4" },
+        { "command": "codealign.preview",             "group": "1_main@5" },
+        { "command": "codealign.alignDiff",           "group": "1_main@6" },
+        { "command": "codealign.sortAndAlign",        "group": "1_main@7" },
+        { "command": "codealign.formatTable",         "group": "1_main@8" },
+        { "command": "codealign.realignLast",         "group": "1_main@9" },
+        { "command": "codealign.alignCustom",         "group": "2_custom@1" },
+        { "command": "codealign.alignRegex",          "group": "2_custom@2" },
+        { "command": "codealign.alignToColumn",       "group": "2_custom@3" },
+        { "command": "codealign.unalign",             "group": "3_unalign@1" },
+        { "command": "codealign.switchProfile",       "group": "4_profile@1" }
       ]
     },
     "submenus": [
@@ -305,6 +329,29 @@
           "type": "boolean",
           "default": false,
           "description": "When enabled, Align Smart (Ctrl+Alt+A) processes every separator in codealign.separators sequentially instead of picking only the best match. Useful when your code mixes multiple separator types (e.g. => and =)."
+        },
+        "codealign.smartAlign.alignComments": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, Align Smart and Align Block at Cursor also align trailing inline comments to the same column as a final pass, producing true multi-column alignment in one action."
+        },
+        "codealign.smartAlign.maxColumns": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Caps how many separators from codealign.separators are processed when smartAlign.multiPass is enabled. 0 = no limit (process the full list)."
+        },
+        "codealign.safeMode.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled together with codealign.maxLineLength, any line that would end up longer than the limit after alignment is left unchanged instead of being padded past it."
+        },
+        "codealign.maxLineLength": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum line length CodeAlign is allowed to produce when codealign.safeMode.enabled is true. 0 = no limit."
         },
         "codealign.livePreview.enabled": {
           "type": "boolean",

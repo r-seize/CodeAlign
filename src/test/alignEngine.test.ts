@@ -7,6 +7,8 @@ import {
     alignMultiColumn,
     unalignBySeparator,
     unalignComments,
+    formatAsTable,
+    findBlockAroundLine,
 } from '../aligner/alignEngine';
 
 // ---------------------------------------------------------------------------
@@ -496,5 +498,95 @@ describe('alignMultiColumn', () => {
         // All # should be at same column
         const hashCols = result.map(l => l.indexOf('#'));
         assert.ok(hashCols.every(c => c === hashCols[0]));
+    });
+});
+
+describe('formatAsTable', () => {
+    it('does not split on a pipe inside an inline code span', () => {
+        const input = [
+            '| Name | Code |',
+            '| --- | --- |',
+            '| Foo | `a|b` |',
+        ];
+        const result = formatAsTable(input);
+        // The code span must survive intact as a single cell, not be split into two
+        assert.ok(result[2].includes('`a|b`'));
+        assert.ok(result[2].trim().startsWith('| Foo'));
+        assert.ok(result[2].trim().endsWith('`a|b` |'));
+    });
+
+    it('round-trips an escaped pipe instead of corrupting the row', () => {
+        const input = [
+            '| Name | Note |',
+            '| --- | --- |',
+            '| Bar | escaped \\| pipe |',
+        ];
+        const result = formatAsTable(input);
+        // The escape must be preserved so the row still parses as 2 cells next time
+        assert.ok(result[2].includes('escaped \\| pipe'));
+        assert.ok(result[2].trim().startsWith('| Bar'));
+    });
+
+    it('preserves left/right/center alignment markers', () => {
+        const input = [
+            '| A | B | C |',
+            '| --- | :--- | ---: |',
+            '| 1 | 2 | 3 |',
+        ];
+        const result = formatAsTable(input);
+        const sepCells = result[1].split('|').map(c => c.trim()).filter(Boolean);
+        assert.strictEqual(sepCells[0], '---');
+        assert.ok(sepCells[1].startsWith(':') && !sepCells[1].endsWith(':'));
+        assert.ok(sepCells[2].endsWith(':') && !sepCells[2].startsWith(':'));
+    });
+});
+
+describe('findBlockAroundLine', () => {
+    it('isolates an object body from its enclosing braces', () => {
+        const lines = [
+            'const user = {',
+            '  name: "Alice",',
+            '  age: 30,',
+            '  email: "a@b.c",',
+            '};',
+        ];
+        assert.deepStrictEqual(findBlockAroundLine(lines, 2), { start: 1, end: 3 });
+    });
+
+    it('stops at a blank line boundary', () => {
+        const lines = [
+            'a = 1',
+            'b = 2',
+            '',
+            'c = 3',
+        ];
+        assert.deepStrictEqual(findBlockAroundLine(lines, 0), { start: 0, end: 1 });
+        assert.deepStrictEqual(findBlockAroundLine(lines, 3), { start: 3, end: 3 });
+    });
+
+    it('stops at an indentation change', () => {
+        const lines = [
+            'if x:',
+            '    a = 1',
+            '    b = 2',
+            'c = 3',
+        ];
+        assert.deepStrictEqual(findBlockAroundLine(lines, 1), { start: 1, end: 2 });
+    });
+
+    it('does not cross a markdown code fence', () => {
+        const lines = [
+            'a = 1',
+            '```',
+            'b = 2',
+            '```',
+            'c = 3',
+        ];
+        assert.deepStrictEqual(findBlockAroundLine(lines, 0), { start: 0, end: 0 });
+    });
+
+    it('returns a single-line block for a blank or fence line itself', () => {
+        const lines = ['a = 1', '', 'b = 2'];
+        assert.deepStrictEqual(findBlockAroundLine(lines, 1), { start: 1, end: 1 });
     });
 });

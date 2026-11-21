@@ -49,6 +49,14 @@ export function getSelectedLines(
 }
 
 /**
+ * Return this document's line ending so rewritten text matches it.
+ * Joining with a hardcoded '\n' would mix endings into a CRLF file.
+ */
+export function getEol(doc: vscode.TextDocument): string {
+  return doc.eol === vscode.EndOfLine.CRLF ? '\r\n' : '\n';
+}
+
+/**
  * Apply aligned lines back to the editor, replacing the given range.
  */
 export async function applyAlignedLines(
@@ -56,7 +64,7 @@ export async function applyAlignedLines(
   range: vscode.Range,
   aligned: string[]
 ): Promise<void> {
-  const newText = aligned.join('\n');
+  const newText = aligned.join(getEol(editor.document));
   await editor.edit(edit => edit.replace(range, newText));
 }
 

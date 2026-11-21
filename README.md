@@ -14,6 +14,10 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 | | |
 |---|---|
 | **Smart auto-detect** | Picks the best separator from your configured list and aligns. No setup needed for common cases. |
+| **Multi-column alignment** | Align Smart also aligns trailing inline comments to the same column in one pass - true multi-column output, not just a single separator. |
+| **Align Block at Cursor** | No selection needed - detects the logical block around the cursor (object, assignment group, YAML block, table) and aligns only that. |
+| **Re-align Last** | Repeats the last alignment operation (same separator, regex, or table) on a new selection. |
+| **Safe mode** | Optionally refuses to push any line past a configured max length instead of applying an alignment that would. |
 | **Align by regex** | Any regular expression as an alignment target - align SQL `AS`, Go channels, or any custom pattern. |
 | **Sort & Align** | Sort selected lines (A–Z, Z–A, by length, by value) then align in one step. |
 | **Git-diff aware** | Aligns only the groups that contain lines you've actually changed - leaves untouched code alone. |
@@ -61,6 +65,8 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 | **Switch Profile** | QuickPick between named config profiles |
 | **Toggle Auto-Align** | Enable / disable background alignment |
 | **Align All Files in Folder** | Align all files in a folder recursively |
+| **Align Block at Cursor** | No selection - aligns only the logical block surrounding the cursor |
+| **Re-align Last** | Repeats the last alignment with the same parameters on a new selection |
 
 ## Keyboard Shortcuts
 
@@ -70,6 +76,8 @@ Universal text alignment for VS Code - variables, operators, comments, tables an
 | `Ctrl+Alt+C` | `Cmd+Alt+C` | Align Inline Comments |
 | `Ctrl+Alt+U` | `Cmd+Alt+U` | Unalign |
 | `Ctrl+Alt+S` | `Cmd+Alt+S` | Sort & Align |
+| `Ctrl+Alt+B` | `Cmd+Alt+B` | Align Block at Cursor |
+| `Ctrl+Alt+R` | `Cmd+Alt+R` | Re-align Last |
 
 Rebind anything via `Ctrl+K Ctrl+S` → search `CodeAlign`.
 
@@ -91,6 +99,10 @@ Rebind anything via `Ctrl+K Ctrl+S` → search `CodeAlign`.
 | `excludedLanguages` | `[]` | Language IDs where CodeAlign is disabled |
 | `pasteAlign.enabled` | `false` | Auto-align multi-line pastes |
 | `smartAlign.multiPass` | `false` | When enabled, `Align Smart` processes **all** separators in `separators` sequentially instead of picking only the best match - useful when your code mixes `=>` and `=` for example |
+| `smartAlign.alignComments` | `true` | `Align Smart` and `Align Block at Cursor` also align trailing inline comments to the same column as a final pass - true multi-column output |
+| `smartAlign.maxColumns` | `0` | Caps how many separators from `separators` are processed when `smartAlign.multiPass` is on. `0` = no limit |
+| `safeMode.enabled` | `false` | With `maxLineLength` set, leaves a line unchanged instead of padding it past the limit |
+| `maxLineLength` | `0` | Maximum line length CodeAlign may produce when `safeMode.enabled` is `true`. `0` = no limit |
 | `livePreview.enabled` | `false` | Show aligned ghost text as you select lines |
 | `columnIndicator.enabled` | `true` | Show separator column in the status bar |
 
@@ -154,9 +166,13 @@ The active profile is shown in the status bar. `languageProfiles` only applies w
   "codealign.autoAlign.debounceMs": 400,
 
   // -- UI
-  "codealign.smartAlign.multiPass":     false,
-  "codealign.livePreview.enabled":      false,
-  "codealign.columnIndicator.enabled":  true,
+  "codealign.smartAlign.multiPass":       false,
+  "codealign.smartAlign.alignComments":   true,
+  "codealign.smartAlign.maxColumns":      0,
+  "codealign.safeMode.enabled":           false,
+  "codealign.maxLineLength":              0,
+  "codealign.livePreview.enabled":        false,
+  "codealign.columnIndicator.enabled":    true,
 
   // -- Profiles 
   "codealign.activeProfile": "",
@@ -271,6 +287,30 @@ city = "NYC"   # location
 
 ### Unalign
 Collapses aligned spaces back to the configured minimum - useful before re-aligning with a different separator or to keep diffs clean.
+
+### Multi-column alignment
+```js
+// Before - cursor anywhere inside the object, no selection needed
+const user = {
+  name: "Alice", // string
+  age: 30, // number
+  email: "a@b.c", // contact
+};
+
+// After - Align Block at Cursor (or Align Smart with a selection)
+const user = {
+  name  : "Alice",  // string
+  age   : 30,       // number
+  email : "a@b.c",  // contact
+};
+```
+Both the `:` and the `//` columns are aligned in a single pass (`codealign.smartAlign.alignComments`, on by default).
+
+### Align Block at Cursor
+No selection, no risk of reformatting the whole file: place the cursor inside a block and run `Ctrl+Alt+B`. CodeAlign expands to the nearest run of same-indent, non-blank lines - stopping at blank lines, indentation changes, and code fences - and aligns only that.
+
+### Re-align Last
+`Ctrl+Alt+R` repeats whichever alignment you last triggered (separator, regex pattern, or table) on the current selection - handy for applying the same operation to a different block without reopening a QuickPick or typing the pattern again.
 
 ## Alignment rules
 

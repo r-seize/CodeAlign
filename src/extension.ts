@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import * as path from 'path';
 import {
   alignBySeparator,
   alignByRegex,
   alignComments,
+  alignMultiColumn,
   alignToColumn,
   alignWithChangedLines,
   detectBestSeparator,
+  findBlockAroundLine,
   findSeparatorIndex,
   formatAsTable,
   unalignBySeparator,
@@ -18,6 +20,7 @@ import {
   getSelectedLines,
   applyAlignedLines,
   showAlignStatus,
+  getEol,
 } from './utils/editorUtils';
 
 interface ProfileConfig {
@@ -41,6 +44,10 @@ interface CodeAlignConfig {
   livePreviewEnabled:       boolean;
   columnIndicatorEnabled:   boolean;
   smartAlignMultiPass:      boolean;
+  smartAlignComments:       boolean;
+  smartAlignMaxColumns:     number;
+  safeModeEnabled:          boolean;
+  maxLineLength:            number;
 }
 
 interface AutoAlignConfig {
@@ -83,7 +90,26 @@ function readConfig(editor?: vscode.TextEditor): CodeAlignConfig {
     livePreviewEnabled:      cfg.get<boolean>('livePreview.enabled', false),
     columnIndicatorEnabled:  cfg.get<boolean>('columnIndicator.enabled', true),
     smartAlignMultiPass:     cfg.get<boolean>('smartAlign.multiPass', false),
+    smartAlignComments:      cfg.get<boolean>('smartAlign.alignComments', true),
+    smartAlignMaxColumns:    cfg.get<number>('smartAlign.maxColumns', 0),
+    safeModeEnabled:         cfg.get<boolean>('safeMode.enabled', false),
+    maxLineLength:           cfg.get<number>('maxLineLength', 0),
   };
+}
+
+/**
+ * When safeMode is enabled and maxLineLength is set, revert any line whose
+ * aligned result would exceed the limit back to its original text instead
+ * of applying it - better to leave a line unaligned than to push it past
+ * the configured boundary (e.g. editor.rulers).
+ */
+function enforceSafeMode(
+  original: string[],
+  aligned: string[],
+  config: CodeAlignConfig
+): string[] {
+  if (!config.safeModeEnabled || config.maxLineLength <= 0) return aligned;
+  return aligned.map((line, i) => (line.length > config.maxLineLength ? (original[i] ?? line) : line));
 }
 
 function readAutoConfig(): AutoAlignConfig {
@@ -128,7 +154,7 @@ async function autoAlignEditor(editor: vscode.TextEditor): Promise<void> {
     new vscode.Position(doc.lineCount - 1, doc.lineAt(doc.lineCount - 1).text.length)
   );
 
-  await editor.edit(edit => edit.replace(fullRange, aligned.join('\n')));
+  await editor.edit(edit => edit.replace(fullRange, aligned.join(getEol(doc))));
 }
 
 type AlignFn = (lines: string[], config: CodeAlignConfig) => string[] | null;
@@ -146,8 +172,10 @@ function registerAlignCommand(
     const sel    = getSelectedLines(editor, config.excludedLanguages);
     if (!sel) return;
 
-    const aligned = fn(sel.lines, config);
+    let aligned = fn(sel.lines, config);
     if (!aligned) return;
+
+    aligned = enforceSafeMode(sel.lines, aligned, config);
 
     if (aligned.join('\n') === sel.lines.join('\n')) {
       vscode.window.showInformationMessage('CodeAlign: already aligned - no changes needed.');
@@ -159,23 +187,46 @@ function registerAlignCommand(
   context.subscriptions.push(disposable);
 }
 
+/**
+ * The last alignment the user invoked, kept so "Re-align Last" can repeat it
+ * with the same parameters on a different selection.
+ */
+type LastOperation =
+  | { kind: 'separator';      separator: string }
+  | { kind: 'multiSeparator'; separators: string[] }
+  | { kind: 'comments' }
+  | { kind: 'regex';          pattern: string }
+  | { kind: 'table' }
+  | { kind: 'column';         column: number; separator?: string };
+
+let lastOperation: LastOperation | null = null;
+
 let isPasteAligning = false;
 
 export function activate(context: vscode.ExtensionContext): void {
 
   // -- Align Smart ----------------------------------------------------------
   registerAlignCommand(context, 'codealign.alignSmart', (lines, config) => {
+    const opts = buildAlignOpts(config);
+
     if (config.smartAlignMultiPass) {
-      const opts = buildAlignOpts(config);
+      const seps = config.smartAlignMaxColumns > 0
+        ? config.separators.slice(0, config.smartAlignMaxColumns)
+        : config.separators;
+
       let result = [...lines];
-      for (const sep of config.separators) {
+      for (const sep of seps) {
         result = alignBySeparator(result, sep, opts);
+      }
+      if (config.smartAlignComments) {
+        result = alignComments(result, config.commentPrefixes, config.commentMinSpaces, config.tabSize);
       }
       if (result.join('\n') === lines.join('\n')) {
         vscode.window.showInformationMessage('CodeAlign: nothing to align in the selection.');
         return null;
       }
-      showAlignStatus(config.separators.join(' · '));
+      showAlignStatus(seps.join(' · '));
+      lastOperation = { kind: 'multiSeparator', separators: seps };
       return result;
     }
 
@@ -183,6 +234,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const dataLines = lines.filter(l => l.trim().length > 0);
     if (dataLines.length >= 2 && dataLines.every(l => l.trim().startsWith('|'))) {
       showAlignStatus('| (table)');
+      lastOperation = { kind: 'table' };
       return formatAsTable(lines);
     }
 
@@ -196,7 +248,12 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     showAlignStatus(sep);
-    return alignBySeparator(lines, sep, buildAlignOpts(config));
+    lastOperation = { kind: 'separator', separator: sep };
+    // Also aligns trailing inline comments to the same column in one pass
+    // (e.g. `name:` and `// comment` columns both land together).
+    return config.smartAlignComments
+      ? alignMultiColumn(lines, sep, config.commentPrefixes, opts, config.commentMinSpaces)
+      : alignBySeparator(lines, sep, opts);
   });
 
   // -- Align by… (QuickPick from smartSeparators) ---------------------------
@@ -235,9 +292,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const sel = getSelectedLines(editor, config.excludedLanguages);
       if (!sel) return;
 
-      const aligned = alignBySeparator(sel.lines, sep, buildAlignOpts(config));
+      const aligned = enforceSafeMode(sel.lines, alignBySeparator(sel.lines, sep, buildAlignOpts(config)), config);
       await applyAlignedLines(editor, sel.range, aligned);
       showAlignStatus(sep);
+      lastOperation = { kind: 'separator', separator: sep };
     })
   );
 
@@ -260,9 +318,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const sel    = getSelectedLines(editor, config.excludedLanguages);
       if (!sel) return;
 
-      const aligned = alignBySeparator(sel.lines, sep, buildAlignOpts(config));
+      const aligned = enforceSafeMode(sel.lines, alignBySeparator(sel.lines, sep, buildAlignOpts(config)), config);
       await applyAlignedLines(editor, sel.range, aligned);
       showAlignStatus(sep);
+      lastOperation = { kind: 'separator', separator: sep };
     })
   );
 
@@ -273,6 +332,7 @@ export function activate(context: vscode.ExtensionContext): void {
     if (aligned.join('\n') === lines.join('\n')) {
       vscode.window.showInformationMessage('CodeAlign: no inline comments found to align.');
     }
+    lastOperation = { kind: 'comments' };
     return aligned;
   });
 
@@ -530,7 +590,7 @@ export function activate(context: vscode.ExtensionContext): void {
               );
 
               const edit = new vscode.WorkspaceEdit();
-              edit.replace(files[i], fullRange, result.join('\n'));
+              edit.replace(files[i], fullRange, result.join(getEol(doc)));
               await vscode.workspace.applyEdit(edit);
               await doc.save();
               alignedCount++;
@@ -636,7 +696,7 @@ export function activate(context: vscode.ExtensionContext): void {
         new vscode.Position(0, 0),
         new vscode.Position(doc.lineCount - 1, doc.lineAt(doc.lineCount - 1).text.length)
       );
-      await editor.edit(edit => edit.replace(fullRange, aligned.join('\n')));
+      await editor.edit(edit => edit.replace(fullRange, aligned.join(getEol(doc))));
       showAlignStatus(`${sep} (diff)`);
     })
   );
@@ -663,11 +723,13 @@ export function activate(context: vscode.ExtensionContext): void {
       const sel = getSelectedLines(editor, config.excludedLanguages);
       if (!sel) return;
 
-      const aligned = alignByRegex(sel.lines, input.trim(), buildAlignOpts(config));
+      let aligned = alignByRegex(sel.lines, input.trim(), buildAlignOpts(config));
       if (!aligned) { vscode.window.showErrorMessage('CodeAlign: invalid regex pattern.'); return; }
+      aligned = enforceSafeMode(sel.lines, aligned, config);
 
       await applyAlignedLines(editor, sel.range, aligned);
       showAlignStatus(`/${input}/`);
+      lastOperation = { kind: 'regex', pattern: input.trim() };
     })
   );
 
@@ -713,7 +775,11 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       });
 
-      const aligned = sep ? alignBySeparator(sorted, sep, buildAlignOpts(config)) : sorted;
+      const aligned = enforceSafeMode(
+        sorted,
+        sep ? alignBySeparator(sorted, sep, buildAlignOpts(config)) : sorted,
+        config
+      );
       await applyAlignedLines(editor, sel.range, aligned);
       showAlignStatus(sep ? `sort + ${sep}` : 'sort');
     })
@@ -736,6 +802,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const formatted = formatAsTable(sel.lines);
       await applyAlignedLines(editor, sel.range, formatted);
       showAlignStatus('table');
+      lastOperation = { kind: 'table' };
     })
   );
 
@@ -761,10 +828,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const column  = parseInt(colInput, 10) - 1;
       const sep     = detectBestSeparator(sel.lines, config.separators, config.smartDetectionThreshold);
-      const aligned = alignToColumn(sel.lines, column, sep ?? undefined, buildAlignOpts(config));
+      const aligned = enforceSafeMode(
+        sel.lines,
+        alignToColumn(sel.lines, column, sep ?? undefined, buildAlignOpts(config)),
+        config
+      );
 
       await applyAlignedLines(editor, sel.range, aligned);
       showAlignStatus(`col ${parseInt(colInput, 10)}`);
+      lastOperation = { kind: 'column', column, separator: sep ?? undefined };
     })
   );
 
@@ -871,6 +943,136 @@ export function activate(context: vscode.ExtensionContext): void {
       }, 250);
     })
   );
+
+  // -- Feature 9: Align Block at Cursor --------------------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.alignBlockAtCursor', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      const config = readConfig(editor);
+      if (config.excludedLanguages.includes(editor.document.languageId)) {
+        vscode.window.showInformationMessage(
+          `CodeAlign: disabled for language "${editor.document.languageId}".`
+        );
+        return;
+      }
+
+      const doc       = editor.document;
+      const allLines  = Array.from({ length: doc.lineCount }, (_, i) => doc.lineAt(i).text);
+      const cursorLine = editor.selection.active.line;
+      const block      = findBlockAroundLine(allLines, cursorLine, config.tabSize);
+
+      if (block.end <= block.start) {
+        vscode.window.showInformationMessage('CodeAlign: no multi-line block found at the cursor.');
+        return;
+      }
+
+      const blockLines = allLines.slice(block.start, block.end + 1);
+      const opts        = buildAlignOpts(config);
+
+      const dataLines = blockLines.filter(l => l.trim().length > 0);
+      let aligned: string[];
+      let label:   string;
+
+      if (dataLines.length >= 2 && dataLines.every(l => l.trim().startsWith('|'))) {
+        aligned = formatAsTable(blockLines);
+        label   = '| (block)';
+        lastOperation = { kind: 'table' };
+      } else {
+        const sep = detectBestSeparator(blockLines, config.separators, config.smartDetectionThreshold);
+        if (!sep) {
+          vscode.window.showInformationMessage('CodeAlign: no alignable separator found in the block at cursor.');
+          return;
+        }
+        aligned = config.smartAlignComments
+          ? alignMultiColumn(blockLines, sep, config.commentPrefixes, opts, config.commentMinSpaces)
+          : alignBySeparator(blockLines, sep, opts);
+        label = `${sep} (block)`;
+        lastOperation = { kind: 'separator', separator: sep };
+      }
+
+      aligned = enforceSafeMode(blockLines, aligned, config);
+
+      if (aligned.join('\n') === blockLines.join('\n')) {
+        vscode.window.showInformationMessage('CodeAlign: block at cursor is already aligned.');
+        return;
+      }
+
+      const range = new vscode.Range(
+        new vscode.Position(block.start, 0),
+        new vscode.Position(block.end, allLines[block.end].length)
+      );
+      await applyAlignedLines(editor, range, aligned);
+      showAlignStatus(label);
+    })
+  );
+
+  // -- Feature 10: Re-align Last ----------------------------------------------
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codealign.realignLast', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
+
+      if (!lastOperation) {
+        vscode.window.showInformationMessage('CodeAlign: no previous alignment to repeat yet.');
+        return;
+      }
+
+      const config = readConfig(editor);
+      const sel    = getSelectedLines(editor, config.excludedLanguages);
+      if (!sel) return;
+
+      const opts = buildAlignOpts(config);
+      let aligned: string[] | null = null;
+      let label = '';
+
+      switch (lastOperation.kind) {
+        case 'separator':
+          aligned = alignBySeparator(sel.lines, lastOperation.separator, opts);
+          label   = lastOperation.separator;
+          break;
+        case 'multiSeparator': {
+          let result = [...sel.lines];
+          for (const sep of lastOperation.separators) result = alignBySeparator(result, sep, opts);
+          aligned = result;
+          label   = lastOperation.separators.join(' · ');
+          break;
+        }
+        case 'comments':
+          aligned = alignComments(sel.lines, config.commentPrefixes, config.commentMinSpaces, config.tabSize);
+          label   = 'comments';
+          break;
+        case 'regex':
+          aligned = alignByRegex(sel.lines, lastOperation.pattern, opts);
+          label   = `/${lastOperation.pattern}/`;
+          break;
+        case 'table':
+          aligned = formatAsTable(sel.lines);
+          label   = 'table';
+          break;
+        case 'column':
+          aligned = alignToColumn(sel.lines, lastOperation.column, lastOperation.separator, opts);
+          label   = `col ${lastOperation.column + 1}`;
+          break;
+      }
+
+      if (!aligned) {
+        vscode.window.showInformationMessage('CodeAlign: could not repeat the last alignment on this selection.');
+        return;
+      }
+
+      aligned = enforceSafeMode(sel.lines, aligned, config);
+
+      if (aligned.join('\n') === sel.lines.join('\n')) {
+        vscode.window.showInformationMessage('CodeAlign: already aligned - no changes needed.');
+        return;
+      }
+
+      await applyAlignedLines(editor, sel.range, aligned);
+      showAlignStatus(`${label} (repeat)`);
+    })
+  );
 }
 
 export function deactivate(): void {}
@@ -878,7 +1080,7 @@ export function deactivate(): void {}
 // -- Git diff helper -------------------------------------------------------
 function getGitChangedLines(filePath: string): Set<number> {
   try {
-    const out = execSync(`git diff HEAD -U0 -- "${filePath}"`, {
+    const out = execFileSync('git', ['diff', 'HEAD', '-U0', '--', filePath], {
       cwd:      path.dirname(filePath),
       encoding: 'utf-8',
       stdio:    ['pipe', 'pipe', 'pipe'],

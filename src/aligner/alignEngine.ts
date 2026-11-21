@@ -115,7 +115,7 @@ export function findSeparatorIndex(line: string, separator: string, occurrence =
     return -1;
 }
 
-function getIndent(line: string): string {
+export function getIndent(line: string): string {
     return line.match(/^(\s*)/)?.[1] ?? '';
 }
 
@@ -123,13 +123,54 @@ function getIndent(line: string): string {
  * Expand tabs to spaces using the given tab size so that visually-equivalent
  * indentations compare equal across mixed tab/space files.
  */
-function normalizeIndent(indent: string, tabSize: number): string {
+export function normalizeIndent(indent: string, tabSize: number): string {
     let col = 0;
     for (const ch of indent) {
         if (ch === '\t') col += tabSize - (col % tabSize);
         else col += 1;
     }
     return ' '.repeat(col);
+}
+
+/**
+ * Find the logical block of lines surrounding lineIndex: the contiguous run
+ * of non-blank lines at the same indentation level, bounded by blank lines
+ * and markdown code-fence markers. Used by "Align Block at Cursor" so a
+ * single invocation without a selection only touches the nearest block
+ * instead of the whole file.
+ */
+export function findBlockAroundLine(
+    lines: string[],
+    lineIndex: number,
+    tabSize = 4
+): { start: number; end: number } {
+    if (lineIndex < 0 || lineIndex >= lines.length) {
+        return { start: lineIndex, end: lineIndex };
+    }
+
+    const isFence = (l: string) => /^\s*(`{3,}|~{3,})/.test(l);
+    if (lines[lineIndex].trim() === '' || isFence(lines[lineIndex])) {
+        return { start: lineIndex, end: lineIndex };
+    }
+
+    const indentOf   = (l: string) => normalizeIndent(getIndent(l), tabSize);
+    const baseIndent = indentOf(lines[lineIndex]);
+
+    let start = lineIndex;
+    while (start > 0) {
+        const prev = lines[start - 1];
+        if (prev.trim() === '' || isFence(prev) || indentOf(prev) !== baseIndent) break;
+        start--;
+    }
+
+    let end = lineIndex;
+    while (end < lines.length - 1) {
+        const next = lines[end + 1];
+        if (next.trim() === '' || isFence(next) || indentOf(next) !== baseIndent) break;
+        end++;
+    }
+
+    return { start, end };
 }
 
 /**
@@ -514,8 +555,18 @@ export function alignByRegex(
         groupStart = -1; groupIndent = '';
     };
 
+    let inCodeFence = false;
+
     for (let i = 0; i <= lines.length; i++) {
         if (i === lines.length) { close(i); break; }
+
+        if (/^\s*(`{3,}|~{3,})/.test(lines[i])) {
+            close(i);
+            inCodeFence = !inCodeFence;
+            continue;
+        }
+        if (inCodeFence) { close(i); continue; }
+
         const m      = regex.exec(lines[i]);
         const indent = normalizeIndent(getIndent(lines[i]), options.tabSize);
         if (!m) { close(i); continue; }
@@ -546,9 +597,65 @@ export function alignByRegex(
 }
 
 /**
+ * Split a table row on a single-character delimiter, without breaking on
+ * delimiters that are escaped (\|) or that fall inside an inline code span
+ * (`...`). Escaped delimiters are unescaped in the returned cells.
+ */
+function splitTableRow(line: string, delimiter: string): string[] {
+    const cells: string[] = [];
+    let current = '';
+    let inCode  = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+
+        if (ch === '`') {
+            inCode = !inCode;
+            current += ch;
+            continue;
+        }
+
+        if (!inCode && ch === '\\' && line[i + 1] === delimiter) {
+            current += delimiter;
+            i++;
+            continue;
+        }
+
+        if (!inCode && ch === delimiter) {
+            cells.push(current);
+            current = '';
+            continue;
+        }
+
+        current += ch;
+    }
+    cells.push(current);
+    return cells;
+}
+
+/**
+ * Re-escape bare pipes in a cell for markdown table output (pipes inside an
+ * inline code span don't need escaping per GFM and are left as-is).
+ * Counterpart to the unescaping splitTableRow performs on parse.
+ */
+function escapeTableCell(text: string, delimiter: string): string {
+    if (delimiter !== '|') return text;
+    let result = '';
+    let inCode = false;
+    for (const ch of text) {
+        if (ch === '`') { inCode = !inCode; result += ch; continue; }
+        result += (ch === '|' && !inCode) ? '\\|' : ch;
+    }
+    return result;
+}
+
+type ColumnAlign = 'none' | 'left' | 'right' | 'center';
+
+/**
  * Format selected lines as a Markdown table.
- * Auto-detects delimiter (|, comma, tab). Recalculates column widths and
- * inserts/replaces the header separator row.
+ * Auto-detects delimiter (|, comma, tab). Recalculates column widths,
+ * preserves per-column alignment markers (:--, --:, :--:) from the existing
+ * separator row if present, and inserts/replaces that row.
  */
 export function formatAsTable(lines: string[]): string[] {
     if (lines.length < 2) return lines;
@@ -558,12 +665,14 @@ export function formatAsTable(lines: string[]): string[] {
                     : score(',') >= score('\t') ? ','
                     : '\t';
 
-    const parse = (l: string) => l.split(delimiter)
+    const parse = (l: string) => splitTableRow(l, delimiter)
         .map(c => c.trim())
         .filter((c, i, arr) => !(i === 0 && c === '') && !(i === arr.length - 1 && c === ''));
 
-    const rows     = lines.map(parse);
-    const dataRows = rows.filter(r => !r.every(c => /^[-: ]+$/.test(c)));
+    const rows      = lines.map(parse);
+    const isSepRow  = (r: string[]) => r.length > 0 && r.every(c => /^:?-+:?$/.test(c));
+    const sepRowIdx = rows.findIndex(isSepRow);
+    const dataRows  = rows.filter(r => !isSepRow(r));
     if (dataRows.length === 0) return lines;
 
     const colCount  = Math.max(...dataRows.map(r => r.length));
@@ -574,12 +683,41 @@ export function formatAsTable(lines: string[]): string[] {
         }
     }
 
+    const aligns: ColumnAlign[] = Array(colCount).fill('none');
+    if (sepRowIdx >= 0) {
+        const sepCells = rows[sepRowIdx];
+        for (let c = 0; c < colCount; c++) {
+            const cell = sepCells[c];
+            if (!cell) continue;
+            const left  = cell.startsWith(':');
+            const right = cell.endsWith(':');
+            aligns[c] = left && right ? 'center' : right ? 'right' : left ? 'left' : 'none';
+        }
+    }
+
+    const padCell = (text: string, width: number, align: ColumnAlign) => {
+        const gap = width - text.length;
+        if (gap <= 0) return text;
+        if (align === 'right')  return ' '.repeat(gap) + text;
+        if (align === 'center') {
+            const left = Math.floor(gap / 2);
+            return ' '.repeat(left) + text + ' '.repeat(gap - left);
+        }
+        return text + ' '.repeat(gap);
+    };
+
     const fmtRow = (cells: string[]) =>
         '| ' + Array.from({ length: colCount }, (_, c) =>
-            (cells[c] ?? '').padEnd(colWidths[c])
+            escapeTableCell(padCell(cells[c] ?? '', colWidths[c], aligns[c]), delimiter)
         ).join(' | ') + ' |';
 
-    const sepRow = '| ' + colWidths.map(w => '-'.repeat(w)).join(' | ') + ' |';
+    const sepCell = (width: number, align: ColumnAlign) => {
+        if (align === 'center') return ':' + '-'.repeat(Math.max(1, width - 2)) + ':';
+        if (align === 'right')  return '-'.repeat(Math.max(1, width - 1)) + ':';
+        if (align === 'left')   return ':' + '-'.repeat(Math.max(1, width - 1));
+        return '-'.repeat(width);
+    };
+    const sepRow = '| ' + colWidths.map((w, c) => sepCell(w, aligns[c])).join(' | ') + ' |';
 
     const indent = lines[0].match(/^(\s*)/)?.[1] ?? '';
     const result = [indent + fmtRow(dataRows[0]), indent + sepRow];
